@@ -338,3 +338,14 @@
 - Risks/limitations: broad `*.key` is retained for repository-local key protection and could hide a non-secret source fixture with that suffix; use a narrowly scoped force-add only for reviewed safe fixtures. Existing tracked evidence and sources remain unaffected by ignore rules.
 - Rollback: remove the two nested ignore files and restore the previous root `.gitignore`; leave append-only history intact.
 - Next: review the three ignore files with the next repository changes.
+
+## ROOT-README — 2026-10-13 — Codex /root
+
+- Status: COMPLETE.
+- Summary: created a repository-front README with product scope and current limitations, architecture flow, repository map, controller/agent getting-started routes, verification commands, security/deployment notes, and links to requirements, status, implementation, testing and operations docs.
+- Files: `README.md` (new); this change log.
+- Checks: `git diff --check` PASS. README links were checked against existing repository paths. No application tests run; documentation-only change.
+- UI/network impact: none; the README explicitly states that network apply/rollback and failover are not implemented.
+- Risks/limitations: local setup and test commands rely on the linked controller and agent guides for environment-specific steps; actual ingress and Debian deployment remain unverified as stated in project docs.
+- Rollback: remove the new root `README.md`; preserve the append-only change log.
+- Next: use this README as the repository landing page and keep its capability summary aligned with `docs/STATUS.md`.
