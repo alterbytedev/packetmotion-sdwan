@@ -371,3 +371,14 @@
 - Risks/limitations: future implementation state may change; status and command documentation should be refreshed with subsequent code milestones. VM/lab capabilities remain UNVERIFIED as recorded.
 - Rollback: revert the documentation and AGENTS changes; keep this append-only record.
 - Next: implement only after the relevant milestone is approved; update the status and evidence alongside each delivered capability.
+
+## GITHUB-ACTIONS-PAUSE — 2026-10-13 — Codex /root
+
+- Status: COMPLETE; the repository GitHub Actions workflow is paused and its source is preserved for later re-enablement.
+- Summary: renamed `.github/workflows/ci.yml` to `.github/workflows/ci.yml.disabled`. GitHub Actions discovers workflow definitions with `.yml` or `.yaml` extensions, so the renamed file is not loaded as a workflow; rename it back to `ci.yml` to re-enable it.
+- Files: `.github/workflows/ci.yml` (renamed to `.github/workflows/ci.yml.disabled`); this change log.
+- Checks: `git diff --check` PASS; inspected `.github/workflows/` to confirm there is no remaining `.yml` or `.yaml` workflow file. No application tests run; this changes workflow discovery only.
+- UI/network impact: none. CI checks will no longer run automatically through this repository workflow while it is paused; local commands remain available.
+- Risks/limitations: other workflows in GitHub settings or external CI systems are unaffected; none were present in this repository's `.github/workflows/` directory at inspection.
+- Rollback: rename `.github/workflows/ci.yml.disabled` back to `.github/workflows/ci.yml`.
+- Next: re-enable by restoring the `.yml` extension when requested.
