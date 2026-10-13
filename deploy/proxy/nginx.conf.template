@@ -1,0 +1,42 @@
+# Render placeholders into a private file; never commit the real upstream secret.
+events {}
+http {
+  access_log off;
+  error_log /dev/stderr warn;
+  limit_req_zone $binary_remote_addr zone=enrollment:10m rate=5r/s;
+  server {
+    listen 443 ssl;
+    server_name ${PUBLIC_HOST};
+    ssl_certificate /pki/server.crt;
+    ssl_certificate_key /pki/server.key;
+    ssl_client_certificate /pki/device-ca.crt;
+    ssl_verify_client optional;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    client_max_body_size 32k;
+    client_body_timeout 15s;
+    location = /api/agent/v1/enroll {
+      limit_req zone=enrollment burst=5 nodelay;
+      proxy_pass http://${CONTROLLER_UPSTREAM};
+      proxy_set_header X-Fabric-Proxy-Secret ${PROXY_SECRET};
+      proxy_set_header X-Fabric-Client-Serial "";
+      proxy_set_header X-Fabric-Client-Verified "";
+      proxy_set_header Cookie "";
+    }
+    location /api/agent/v1/ {
+      if ($ssl_client_verify != SUCCESS) { return 403; }
+      proxy_pass http://${CONTROLLER_UPSTREAM};
+      proxy_set_header X-Fabric-Proxy-Secret ${PROXY_SECRET};
+      proxy_set_header X-Fabric-Client-Serial $ssl_client_serial;
+      proxy_set_header X-Fabric-Client-Verified $ssl_client_verify;
+      proxy_set_header Cookie "";
+    }
+    location / {
+      proxy_pass http://${CONTROLLER_UPSTREAM};
+      proxy_set_header Host $http_host;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Fabric-Proxy-Secret "";
+      proxy_set_header X-Fabric-Client-Serial "";
+      proxy_set_header X-Fabric-Client-Verified "";
+    }
+  }
+}

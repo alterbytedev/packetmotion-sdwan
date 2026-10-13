@@ -1,0 +1,22 @@
+# Controller local configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Node dependencies and Next.js generated files
+node_modules/
+.next/
+.next-*/
+out/
+/next-env.d.ts
+*.tsbuildinfo
+
+# Controller test output
+/coverage/
+/playwright-report/
+/test-results/
+
+# Local device CA and generated controller binary
+/.pki/
+/backend/bin/

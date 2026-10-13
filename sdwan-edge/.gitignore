@@ -1,0 +1,17 @@
+# Go build outputs and coverage profiles
+/bin/
+*.test
+*.out
+coverage/
+
+# Local agent identity and runtime state
+/.pki/
+/.agent-state/
+/private-state/
+*.key
+
+# Local environment configuration
+.env
+.env.*
+!.env.example
+!.env.*.example

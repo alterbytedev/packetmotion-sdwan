@@ -1,0 +1,65 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local environment files: keep committed templates visible
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Node.js dependencies and package manager logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Next.js generated output (controller and any future app workspace)
+.next/
+.next-*/
+out/
+
+# TypeScript incremental build state
+*.tsbuildinfo
+
+# Test and coverage output
+coverage/
+playwright-report/
+test-results/
+
+# General build artifacts
+/dist/
+/build/
+
+# Go binaries and coverage profiles
+/sdwan-edge/bin/
+/sdwan-controller/backend/bin/
+*.test
+*.out
+
+# Local runtime state, credentials, and generated PKI
+.pki/
+.agent-state/
+.next-agent/
+private-state/
+*.key
+
+# Local databases and transient files
+*.sqlite
+*.sqlite3
+*.db
+*.tmp
+
+# Keep generated browser evidence and reviewed documentation tracked.
+
+# Generated Next.js type entrypoint
+/sdwan-controller/next-env.d.ts
+
+# Change log append coordination files
+/docs/change-logs/.append.lock
+/docs/change-logs/.index.tmp

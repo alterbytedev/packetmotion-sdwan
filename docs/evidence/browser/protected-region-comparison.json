@@ -1,0 +1,37 @@
+{
+  "scope": "same local Chromium/OS; excludes development overlay and intentional inventory content",
+  "results": [
+    {
+      "name": "login-desktop",
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900,
+      "changedPixels": 0
+    },
+    {
+      "name": "login-mobile",
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 750,
+      "changedPixels": 0
+    },
+    {
+      "name": "overview-desktop",
+      "x": 248,
+      "y": 0,
+      "width": 1192,
+      "height": 72,
+      "changedPixels": 0
+    },
+    {
+      "name": "overview-mobile",
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 72,
+      "changedPixels": 0
+    }
+  ]
+}

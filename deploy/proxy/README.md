@@ -1,0 +1,11 @@
+# HTTPS/mTLS ingress
+
+The agent initiates every management request. Use nginx.conf.template with a real HTTPS server certificate, a dedicated device CA certificate and a private upstream. Verified TLS client serial + verification status are forwarded only on agent paths; the application also checks a shared proxy secret, certificate expiry and current device revocation for every request. Enrollment is the only agent path that does not require a client certificate. Its token travels in the JSON body, never the URL.
+
+Render PUBLIC_HOST, CONTROLLER_UPSTREAM and PROXY_SECRET into a private configuration file. Use a random hex proxy secret of at least 32 characters; set the identical CONTROLLER_AGENT_PROXY_SECRET on Next.js. Do not commit the rendered file. Do not use an unprotected publicly accessible upstream. On one host, bind Next.js to loopback and run NGINX locally; containers must share a private network with only the TLS proxy published. Header secret protection is defense in depth, not permission to expose the raw upstream.
+
+Configure CONTROLLER_ENROLLMENT_URL and CONTROLLER_AGENT_URL to the externally reachable HTTPS origin and CONTROLLER_PUBLIC_ORIGIN for operator CSRF protection. Use a certificate trusted by the agent OS or explicitly supply --server-ca for a private server CA. Keep the server TLS CA and device identity CA purposes separate in production. init:device-ca creates a dedicated private signer for the MVP; production key custody/backup must be established before pilot.
+
+Validate the rendered configuration with nginx -t. The isolated smoke test uses pinned image nginx@sha256:9bf97bd7714f5e24c1ccd545ecb9eb5435cb6d109c97cebb15e7e455e0239edb. It tests real Go enrollment, controller config/telemetry, missing client certificate, spoofed headers, direct bypass rejection and revocation on an existing keep-alive connection. This is a local Docker/Next test, not a Debian network or production deployment gate.
+
+Request bodies are bounded, enrollment has rate limiting, access logging is disabled to avoid credentials in logs. Device CA private key stays on the signer host with mode 0600; agents hold their own key in private local state. Revocation is application-checked even while a TLS connection remains open.

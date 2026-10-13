@@ -1,0 +1,9 @@
+FRR command
+
+echo 'hostname pmotion' > /etc/frr/frr.conf && systemctl restart frr
+vtysh -c 'show running-config'
+vtysh -c 'write memory'
+
+Debian command
+ip route show
+bridge fdb show

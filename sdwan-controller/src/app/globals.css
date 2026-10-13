@@ -1,0 +1,51 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f0f2f4;
+  --color-secondary-foreground: #283443;
+  --color-muted: #f5f6f8;
+  --color-muted-foreground: #72808e;
+  --color-accent: #edf5f3;
+  --color-accent-foreground: #137d63;
+  --color-border: #e7ebef;
+  --color-input: #dfe5e9;
+  --color-ring: #16866b;
+  --font-sans: Arial, Helvetica, sans-serif;
+}
+:root {
+  --background: #ffffff;
+  --foreground: #1e2b38;
+  --card: #ffffff;
+  --primary: #13866a;
+}
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply m-0 bg-background font-sans text-foreground antialiased;
+  }
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: #c2eadc;
+  }
+}
+.grid-surface {
+  background-image:
+    linear-gradient(#ffffff06 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff06 1px, transparent 1px);
+  background-size: 48px 48px;
+}

@@ -1,0 +1,17 @@
+# Documentation index
+
+- [PRD v1.1](prd/packetmotion-fabric-v1.1.md)
+- [Implementation plan](development/implementation-plan.md)
+- [Testing strategy](development/testing-strategy.md)
+- [Network design](architecture/network-design.md)
+- [Security model](architecture/security-model.md)
+- [Architecture decisions](adr/README.md)
+- [Next.js controller / Go agents decision](adr/0001-nextjs-controller-go-agents.md)
+- [Delivery status](STATUS.md)
+- [Change logs](change-logs/README.md)
+- [Agent management channel](adr/0002-agent-management-channel.md)
+- [Go agent development](../sdwan-edge/README.md)
+- [HTTPS/mTLS ingress](../deploy/proxy/README.md)
+
+- [Controller UI component architecture](development/ui-component-architecture.md)
+- [Runtime error troubleshooting](operations/runtime-error-troubleshooting.md)

@@ -1,0 +1,61 @@
+name: Controller checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  controller:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fabric_test
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: sdwan-controller
+    env:
+      TEST_DATABASE_URL: postgresql://fabric_test:isolated-ci-only@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: sdwan-controller/.nvmrc
+          cache: npm
+          cache-dependency-path: sdwan-controller/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run test:agent
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence
+          path: |
+            docs/evidence/browser/
+            sdwan-controller/test-results/
+
+  agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdwan-edge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: go build ./cmd/fabric-agent

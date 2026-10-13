@@ -1,0 +1,1361 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PacketMotion Fabric Controller",
+    "version": "0.2.0",
+    "description": "Single-customer Next.js controller, operator inventory and outbound HTTPS/mTLS management agent MVP. Config received is not network applied."
+  },
+  "paths": {
+    "/api/operator/sites": {
+      "get": {
+        "operationId": "listSites",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted sites. Response is never cached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "sites"
+                  ],
+                  "properties": {
+                    "sites": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Site"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSite",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Admin only. Requires Origin exactly matching controller origin (CONTROLLER_PUBLIC_ORIGIN when set); cross-site requests denied. JSON body limited to 8192 bytes. Canonical unicast IPv4 prefixes cannot overlap existing sites. lanPrefix is optional at inventory stage.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Site and audit committed together.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "site"
+                  ],
+                  "properties": {
+                    "site": {
+                      "$ref": "#/components/schemas/Site"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/operator/nodes": {
+      "get": {
+        "operationId": "listNodes",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted nodes. Response is never cached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "nodes",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ],
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Node"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "pageSize": {
+                      "type": "integer",
+                      "enum": [
+                        10,
+                        25,
+                        50,
+                        100
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "description": "Authenticated asynchronous inventory. Literal case-insensitive substring search by device name or Edge/Hub type. Stable name/id ordering; bounded server pagination; out-of-range page clamps to last page. No tokens returned.",
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": ""
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "enum": [
+                10,
+                25,
+                50,
+                100
+              ],
+              "default": 25
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "createNode",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Admin only; same Origin and JSON size requirements as createSite. Supply mode and optional lanPrefix to register a device and its internal network in one atomic transaction; legacy siteId registration remains supported. Branch is the wire value for an Edge device. No enrollment or networking side effects.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Node and audit committed together.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "node",
+                    "enrollment"
+                  ],
+                  "properties": {
+                    "node": {
+                      "$ref": "#/components/schemas/Node"
+                    },
+                    "enrollment": {
+                      "$ref": "#/components/schemas/EnrollmentToken"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/agent/v1/enroll": {
+      "post": {
+        "operationId": "agentEnroll",
+        "security": [],
+        "description": "One-use token and signed CSR over server-authenticated HTTPS through trusted ingress.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Enroll"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrolled"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/agent/v1/heartbeat": {
+      "post": {
+        "operationId": "agentHeartbeat",
+        "security": [
+          {
+            "deviceCertificate": []
+          }
+        ],
+        "description": "Identity/node scope comes from mTLS; no caller-selected node ID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Heartbeat"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "accepted"
+                  ],
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/agent/v1/desired": {
+      "get": {
+        "operationId": "agentDesired",
+        "security": [
+          {
+            "deviceCertificate": []
+          }
+        ],
+        "description": "Identity/node scope comes from mTLS; no caller-selected node ID.",
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Desired"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/agent/v1/ack": {
+      "post": {
+        "operationId": "agentAck",
+        "security": [
+          {
+            "deviceCertificate": []
+          }
+        ],
+        "description": "Identity/node scope comes from mTLS; no caller-selected node ID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Ack"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "accepted"
+                  ],
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/agent/v1/renew": {
+      "post": {
+        "operationId": "agentRenew",
+        "security": [
+          {
+            "deviceCertificate": []
+          }
+        ],
+        "description": "Identity/node scope comes from mTLS; no caller-selected node ID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "csr"
+                ],
+                "properties": {
+                  "csr": {
+                    "type": "string",
+                    "maxLength": 8192
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "certificate",
+                    "ca",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "certificate": {
+                      "type": "string"
+                    },
+                    "ca": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}/enrollment": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "operatorenrollmentpost",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Admin only; same-origin Origin, JSON and 8192-byte limit required.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}/revoke": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "operatorrevokepost",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Admin only; same-origin Origin, JSON and 8192-byte limit required.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "revoked"
+                  ],
+                  "properties": {
+                    "revoked": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}/config": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "operatorconfigget",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Admin/viewer read.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Desired"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "operatorconfigpost",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Admin only; same-origin Origin, JSON and 8192-byte limit required.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedRevision",
+                  "pollIntervalSeconds"
+                ],
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "pollIntervalSeconds": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 300
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Desired"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}/telemetry": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "operatortelemetryget",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Admin/viewer read.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "telemetry"
+                  ],
+                  "properties": {
+                    "telemetry": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "operatorSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "sdwan-session"
+      },
+      "deviceCertificate": {
+        "type": "mutualTLS",
+        "description": "Agent client certificate verified at trusted NGINX ingress; device revocation/expiry checked by controller on every request. Clients never supply proxy identity headers."
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Rejected request or unavailable inventory. See HTTP status for category.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "error"
+              ],
+              "properties": {
+                "error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "SiteInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "mode"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "gateway",
+              "subnet-router"
+            ]
+          },
+          "lanPrefix": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Canonical IPv4 CIDR; null or empty means not recorded yet."
+          }
+        }
+      },
+      "Site": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "mode",
+          "lanPrefix",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "gateway",
+              "subnet-router"
+            ]
+          },
+          "lanPrefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "PostgreSQL timestamp text with timezone."
+          }
+        }
+      },
+      "NodeInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "kind"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "siteId"
+            ]
+          },
+          {
+            "required": [
+              "mode"
+            ]
+          }
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "siteId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "hub",
+              "branch"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "gateway",
+              "subnet-router"
+            ]
+          },
+          "lanPrefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Node": {
+        "type": "object",
+        "required": [
+          "id",
+          "siteId",
+          "siteName",
+          "name",
+          "kind",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "siteId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "siteName": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "hub",
+              "branch"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "PostgreSQL timestamp text with timezone."
+          },
+          "connectionStatus": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "offline",
+              "not-enrolled",
+              "revoked"
+            ]
+          },
+          "lastSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "EnrollmentToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "expiresAt",
+          "controllerUrl"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "pattern": "^pm_enroll_[a-f0-9]{64}$"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "controllerUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Enroll": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "csr"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "pattern": "^pm_enroll_[a-f0-9]{64}$"
+          },
+          "csr": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        }
+      },
+      "Enrolled": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nodeId",
+          "kind",
+          "certificate",
+          "ca",
+          "expiresAt",
+          "agentUrl"
+        ],
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "branch",
+              "hub"
+            ]
+          },
+          "certificate": {
+            "type": "string"
+          },
+          "ca": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agentUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DeviceConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "deviceKind",
+          "mode",
+          "lanPrefix",
+          "pollIntervalSeconds"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "deviceKind": {
+            "type": "string",
+            "enum": [
+              "branch",
+              "hub"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "gateway",
+              "subnet-router"
+            ]
+          },
+          "lanPrefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pollIntervalSeconds": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 300
+          }
+        }
+      },
+      "Desired": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "payload",
+          "checksum"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checksum": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Heartbeat": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId",
+          "agentVersion",
+          "os",
+          "arch",
+          "uptimeSeconds",
+          "interfaces"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentVersion": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "os": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "arch": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "uptimeSeconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "interfaces": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "up",
+                "mtu"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "up": {
+                  "type": "boolean"
+                },
+                "mtu": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000
+                }
+              }
+            }
+          }
+        }
+      },
+      "Ack": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "checksum",
+          "status"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "checksum": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "received",
+              "rejected"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
