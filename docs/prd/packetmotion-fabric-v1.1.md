@@ -2,6 +2,8 @@
 
 Status: Engineering handoff draft | 2026-10-12 | L3-first, EVPN-ready
 
+Delivery status is tracked separately in [docs/STATUS.md](../STATUS.md). This PRD remains the target scope: requirements below do not imply that corresponding network-plane behavior has shipped.
+
 ## Vision
 Secure, centrally managed branch connectivity with low-touch onboarding, useful remote resource access, dual-hub resilience, and actionable diagnostics. Primary users: SMB IT administrators and managed service providers. The product is not a complete SD-WAN replacement.
 
@@ -79,3 +81,6 @@ All P0 scenarios pass in isolated lab with captured evidence; no unresolved crit
 
 ## Controller architecture alignment — 2026-10-12
 Accepted by Rama: Next.js owns controller UI/API and PostgreSQL-backed domain services; Go runs on hubs/branches. See ADR 0001. Agents use outbound polling with jitter/backoff, revision-aware retrieval and bounded telemetry batches. Operator sessions and device identities are separate; agent mTLS is verified at a trusted proxy with a protected upstream and application-level revocation checks. Deploy the controller as an always-on Node service/container. Preserve all P0 requirements and existing UI/auth. Scale is a measured release criterion; no maximum device count is promised.
+
+## Current implementation boundary
+The delivered management MVP includes operator inventory, one-use enrollment, trusted-proxy mTLS device identity, desired revision retrieval and receipt/rejection acknowledgements, certificate renewal, heartbeat/interface telemetry, controller runtime-error reporting, and separate read-only developer diagnostics. Agent configuration is validated and staged locally but is not applied. WireGuard/FRR/nftables generation, local safe apply/rollback, routed reachability, policies/resources, and hub failover remain planned and require lab evidence before release claims.

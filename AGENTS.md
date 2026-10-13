@@ -14,6 +14,8 @@
 
 ## Engineering
 - Implement L3-first only: Next.js controller UI/API and Go edge/hub agents, PostgreSQL, Debian, WireGuard, FRRouting BGP IPv4, nftables.
+- The current delivered agent scope is management only: enrollment/mTLS, desired-revision retrieval and acknowledgement, certificate renewal, heartbeat and interface telemetry. Do not describe staged/received configuration as applied; network generation, privileged apply, rollback, tunnel/BGP health, and routed reachability are not implemented until code and evidence are added.
+- The controller is the existing Next.js application with server-only domain services and PostgreSQL. The shared agent is in `sdwan-edge/` and uses Go 1.27.2; there is no separate Go controller service.
 - Separate management, control and data planes. Forwarding must survive controller loss.
 - Do not implement EVPN, VXLAN, L2 extension, or speculative features.
 - Validate actual versions and command syntax; never invent successful test results.
@@ -23,6 +25,7 @@
 ## Testing
 - Follow `docs/development/testing-strategy.md`. Risk-based, not every function.
 - Immediately run targeted tests after each critical change; integration/failure tests for real network behavior.
+- Available controller checks include `npm test`, `npm run test:integration`, `npm run test:browser`, `npm run test:visual`, `npm run test:agent`, lint, typecheck and build; use only checks relevant to the change. Available Go checks are listed in `sdwan-edge/AGENTS.md`. Network-plane claims require isolated VM/lab evidence.
 - Mark unrun tests UNVERIFIED. Bug fixes require regression tests where feasible.
 
 ## Change management

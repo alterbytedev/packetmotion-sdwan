@@ -35,3 +35,8 @@ Two hubs, two branches, controller, two LAN hosts in isolated VMs or namespaces:
 
 ## CI gates
 PR: lint, typecheck, targeted unit/integration, API contracts. Milestone: regression and relevant network tests. Release: full critical network failure and security scenarios, build and recovery evidence.
+
+## Repository commands and evidence boundary
+The controller package provides `npm test`, `npm run test:integration`, `npm run test:browser`, `npm run test:visual`, and `npm run test:agent`, plus lint, typecheck and build. `test:agent` provisions isolated PostgreSQL/PKI and a test Next.js + NGINX ingress, builds and exercises the real shared Go agent; it requires Docker, OpenSSL and Go 1.27.2. It verifies the management channel and proxy boundary only. It does not verify Debian/systemd deployment or WireGuard, FRR, nftables, routed traffic, rollback, failover or reboot behavior.
+
+Run Go checks from `sdwan-edge/`: `go test ./...`, `go test -race ./...`, `go vet ./...`, and `go build ./cmd/fabric-agent`. The repository pins Go 1.27.2. Always report the commands actually run and their real outcome; repository documentation and a successful management smoke are not evidence that pending network scenarios passed.

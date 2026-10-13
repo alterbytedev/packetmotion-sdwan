@@ -13,13 +13,13 @@ Use TypeScript and nearby conventions. Biome is configured; do not introduce a s
 
 ## Current constraints
 
-Operator login, protected dashboard, admin/viewer roles, audited site/node inventory and auth/controller migrations are implemented. One-use enrollment, trusted-proxy mTLS device APIs, management desired revisions/acknowledgements, heartbeat/interface telemetry and read-only Go agent are implemented. Actual network generation/apply/rollback and tunnel/BGP telemetry remain pending. The deployment is single-customer; no tenant system is planned. Do not present empty dashboard views as persisted network data. `/api/health` checks application liveness, not database readiness. A PostgreSQL client pool is not an implemented database schema.
+Operator login, protected dashboard, admin/viewer roles, audited site/node inventory, controller migrations, runtime-error reporting and isolated diagnostic-log access are implemented. One-use enrollment, trusted-proxy mTLS device APIs, management desired revisions/acknowledgements, heartbeat/interface telemetry and the shared read-only Go agent are implemented. Actual network configuration generation/apply/rollback and tunnel/BGP/routed-reachability telemetry remain pending. A received revision is not an applied revision. The deployment is single-customer; no tenant system is planned. Do not present empty dashboard views as persisted network data. `/api/health` checks application liveness; `/api/ready` checks PostgreSQL readiness. A PostgreSQL client pool is not an implemented database schema.
 
 Go appliance code and tests live in `../sdwan-edge/` within this repository. The implemented inventory API contract lives in `../api/openapi.yaml`; agent v1 endpoints are documented there. Next.js is the controller API; do not introduce a separate Go controller service. Enforce authenticated device scope, transactional token binding, and durable controller-side deduplication. Keep operator sessions separate from device identity. Never trust caller-supplied identity headers without a verified proxy boundary.
 
 ## Commands and verification
 
-Run from this repository, using the Node version in `.nvmrc` and committed lockfile:
+Run from this repository, using the Node version in `.nvmrc` and committed lockfile. For isolated agent-channel integration, `npm run test:agent` additionally requires Docker, OpenSSL and Go 1.27.2; it exercises the real Go binary and NGINX proxy boundary but does not verify Debian service installation or forwarding:
 
 ```sh
 npm ci

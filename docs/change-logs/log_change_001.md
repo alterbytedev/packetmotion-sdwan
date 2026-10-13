@@ -360,3 +360,14 @@
 - Risks/limitations: Mermaid rendering depends on the Markdown host; source uses standard flowchart and sequenceDiagram syntax. Visual rendering was not checked in a specific host.
 - Rollback: revert only the eight documentation diagrams; preserve this append-only audit entry.
 - Next: check rendered Mermaid display in the documentation host during review.
+
+## REPO-DOCS-ALIGNMENT — 2026-10-13 — Codex /root
+
+- Status: COMPLETE; repository guidance and delivery docs aligned to current code.
+- Summary: scanned the working tree, controller/Go sources, migrations, package commands, API contract, current agent instructions, PRD, testing and implementation docs, status, architecture references, and latest log entries. Clarified management MVP versus unapplied network-plane scope; documented actual controller/agent verification commands and evidence limits; corrected M2/M3 descriptions and the planned migration-number collision (0004 is already in use); marked prior host-tool observations historical.
+- Files: `AGENTS.md`, `sdwan-controller/AGENTS.md`, `sdwan-edge/AGENTS.md`, `docs/STATUS.md`, `docs/development/implementation-plan.md`, `docs/development/testing-strategy.md`, `docs/prd/packetmotion-fabric-v1.1.md`, this log.
+- Checks: `git diff --check` PASS. Documentation links/commands and stale milestone references reviewed against repository paths and package scripts. No application tests run; docs and instructions only.
+- UI/network impact: none; documentation only. No application, UI, API, database, agent, or network behavior changed.
+- Risks/limitations: future implementation state may change; status and command documentation should be refreshed with subsequent code milestones. VM/lab capabilities remain UNVERIFIED as recorded.
+- Rollback: revert the documentation and AGENTS changes; keep this append-only record.
+- Next: implement only after the relevant milestone is approved; update the status and evidence alongside each delivered capability.
