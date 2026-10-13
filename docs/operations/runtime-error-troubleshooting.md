@@ -16,6 +16,19 @@ Treat the output as sensitive operational data. Values are length-bounded and kn
 
 ## Capture coverage and limits
 
+```mermaid
+flowchart LR
+  Browser[Uncaught browser error] --> Fallback[Friendly fallback and reference ID]
+  Fallback -->|Authenticated, bounded same-origin report| API[Runtime error API]
+  Server[Unexpected server/API error] --> Capture[Server capture path]
+  API --> Persist[(PostgreSQL runtime_errors)]
+  Capture --> Persist
+  Persist --> CLI[npm run errors:show]
+  Persist --> Web[Read-only developer page]
+  API -. DB unavailable or migration absent .-> Stderr[Safe metadata to stderr; details not persisted]
+  Capture -. DB unavailable .-> Stderr
+```
+
 - Next.js route/render failures are presented through the app's error boundary. Server-side request failures are captured by Next.js instrumentation.
 - Uncaught browser errors and unhandled promise rejections trigger the friendly fallback and a bounded same-origin report. The report endpoint requires a signed-in operator and validates the submitted fields.
 - Unexpected operator and agent API failures carry their request/reference ID in their error response and persist diagnostics through the controller's server-side logging path.

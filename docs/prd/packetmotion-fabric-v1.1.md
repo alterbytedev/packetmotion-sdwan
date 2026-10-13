@@ -11,6 +11,18 @@ The repository already has a Next.js app, authentication, dashboard and visual t
 ## MVP deployment
 One controller (Next.js UI and Route Handler APIs, PostgreSQL), two Debian hubs, two Debian branches, two test LAN hosts. Single-customer deployment. Go agents connect outbound to controller with authenticated, encrypted management channels. Controller is never in customer packet path.
 
+```mermaid
+flowchart LR
+  Operator[Operator] --> Controller[Next.js controller]
+  Controller --> DB[(PostgreSQL)]
+  Edge[Edge agent] -->|Outbound authenticated management| Controller
+  Hub[Hub agent] -->|Outbound authenticated management| Controller
+  Edge -. customer traffic .-> Hub
+  Hub -. routed traffic .-> Edge
+```
+
+The solid management paths do not carry customer packets. The dashed paths represent the planned L3 forwarding plane; the current management MVP has not implemented it.
+
 ## P0 functional requirements
 - FR-001 Site/node/hub inventory and health overview.
 - FR-002 Secure, expiring, single-use device enrollment and revocation.

@@ -1,6 +1,17 @@
 # Delivery status
 
 ## Implemented M0/M1
+```mermaid
+flowchart LR
+  M0[M0 foundation<br/>implemented] --> M1[M1 inventory<br/>implemented]
+  M1 --> M2[M2 enrollment and management<br/>implemented]
+  M2 --> M3[M3 safe local apply<br/>pending]
+  M3 --> M4[M4 WG, BGP and nftables<br/>pending]
+  M4 --> M5[M5 resilience<br/>pending]
+  M5 --> M6[M6 policies and resources<br/>pending]
+  M6 --> M7[M7 scale and release gate<br/>pending]
+```
+
 Next.js operator login/logout, PostgreSQL scrypt credentials, signed sessions with credential fingerprint revocation, shared email limiter, auth migration, protected dashboard and liveness route are preserved.
 
 M0 adds locked rotating change logs, isolated PostgreSQL integration/browser tests, pinned Playwright and CI configuration. Go source and a pinned Go toolchain are now part of the M2 agent implementation.

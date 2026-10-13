@@ -11,6 +11,22 @@
 - Test negative authorization, malformed inputs, revocation, and policy bypass attempts.
 
 ## Controller boundary (management MVP implemented; public deployment pending)
+```mermaid
+sequenceDiagram
+  participant A as Go agent
+  participant P as Trusted TLS proxy
+  participant C as Next.js controller
+  participant D as PostgreSQL
+  A->>C: Enroll over server-authenticated TLS with one-use token and signed CSR
+  C->>D: Consume token and bind issued certificate to node
+  C-->>A: Client certificate
+  A->>P: Management request over mTLS
+  P->>P: Verify certificate; strip caller identity headers
+  P->>C: Forward over private authenticated upstream
+  C->>D: Check certificate serial, expiry, revocation and scope
+  C-->>A: Scoped response
+```
+
 Next.js Route Handlers and Server Actions use shared server-only services for authorization, validation, persistence and transactional audit. Existing operator auth is preserved. Enrollment occurs over server-authenticated TLS using one-time credentials; subsequent agent requests use mTLS verified by a trusted proxy. Strip caller identity headers and authenticate/protect the proxy upstream; prevent direct API bypass. Check device revocation and resource scope for every request, including keep-alive connections. Redact enrollment URLs, tokens and key material from proxy/application logs. Test this boundary against the deployed proxy before exposing agent endpoints. See ADR 0001.
 
 ## Management MVP implementation status

@@ -10,6 +10,19 @@ Medium: health and diagnostics logic; focused tests for state transitions and ev
 Low: presentational components, icons, static copy, CSS; lint/typecheck, smoke or visual review where appropriate.
 
 ## Mandatory workflow
+```mermaid
+flowchart TD
+  Change[Classify change risk] --> Cases[Identify behavior and negative cases]
+  Cases --> Focused[Run targeted tests immediately]
+  Focused --> Pass{Checks pass?}
+  Pass -- no --> Fix[Fix and rerun]
+  Fix --> Focused
+  Pass -- yes --> Milestone{Milestone complete?}
+  Milestone -- no --> Record[Record actual results and limits]
+  Milestone -- yes --> Regression[Run broader regression suite]
+  Regression --> Record
+```
+
 1. Classify change risk; identify meaningful behavior and negative cases.
 2. Add/update focused tests, preferably reproduce bugs before fixing them.
 3. Execute targeted tests immediately after implementation.

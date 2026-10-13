@@ -349,3 +349,14 @@
 - Risks/limitations: local setup and test commands rely on the linked controller and agent guides for environment-specific steps; actual ingress and Debian deployment remain unverified as stated in project docs.
 - Rollback: remove the new root `README.md`; preserve the append-only change log.
 - Next: use this README as the repository landing page and keep its capability summary aligned with `docs/STATUS.md`.
+
+## DOCS-MERMAID-AUDIT — 2026-10-13 — Codex /root
+
+- Status: COMPLETE; all 15 Markdown files under `docs/` reviewed for diagram usefulness.
+- Summary: added Mermaid visuals where relationships or flows benefit from a visual: product management/data-plane boundary, M0–M7 delivery state, risk-based testing flow, agent enrollment/trusted proxy security sequence, management/control/data plane design, runtime error reporting and recovery paths, controller/agent architecture decision, and agent management polling sequence. Kept index, ADR index, changelog, evidence, and UI component reference documents as text because diagrams would add little over links, chronological records, screenshots, and tables.
+- Files: `docs/prd/packetmotion-fabric-v1.1.md`; `docs/STATUS.md`; `docs/development/testing-strategy.md`; `docs/architecture/security-model.md`; `docs/architecture/network-design.md`; `docs/operations/runtime-error-troubleshooting.md`; `docs/adr/0001-nextjs-controller-go-agents.md`; `docs/adr/0002-agent-management-channel.md`; this change log.
+- Checks: `git diff --check` PASS. Python structural check confirmed one Mermaid block per touched document and balanced Markdown fences. All 15 Markdown files under docs were enumerated and reviewed. No application tests or Mermaid renderer run.
+- UI/network impact: documentation only; diagrams label planned data/control-plane capabilities as pending and do not claim network implementation.
+- Risks/limitations: Mermaid rendering depends on the Markdown host; source uses standard flowchart and sequenceDiagram syntax. Visual rendering was not checked in a specific host.
+- Rollback: revert only the eight documentation diagrams; preserve this append-only audit entry.
+- Next: check rendered Mermaid display in the documentation host during review.

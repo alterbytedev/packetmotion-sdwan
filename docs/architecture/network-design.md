@@ -1,6 +1,24 @@
 # Network Design — L3 MVP
 
 ## Planes
+```mermaid
+flowchart TB
+  subgraph Management[Management plane]
+    UI[Operator UI] --> API[Next.js APIs and services]
+    API --> DB[(PostgreSQL)]
+    Agent[Go agents] -->|Outbound HTTPS and mTLS| API
+  end
+  subgraph Control[Control plane — planned]
+    WG[WireGuard adjacencies] --> BGP[FRR BGP IPv4]
+    BGP --> Routes[Filtered route selection]
+  end
+  subgraph Data[Data plane — planned]
+    LAN[Branch LAN] --> Tunnel[Encrypted WireGuard traffic]
+    Tunnel --> Policy[nftables policy]
+    Policy --> Remote[Remote branch LAN]
+  end
+```
+
 Management: Next.js UI -> server-only controller services/PostgreSQL; Go agents on both hubs and branches initiate authenticated outbound HTTPS requests to Next.js Route Handler APIs. No customer data forwarding via controller.
 Control: FRRouting BGP IPv4 unicast, explicit route filters and deterministic preferred/backup policy. Proposed ASNs hubs 65000, branch A 65001, branch B 65002.
 Data: Linux IP forwarding and nftables over WireGuard encrypted branch-to-hub tunnels. Hub forwarding provides branch-to-branch reachability.

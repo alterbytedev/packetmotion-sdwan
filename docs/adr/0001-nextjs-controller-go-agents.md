@@ -6,6 +6,15 @@ Status: Accepted by Rama, 2026-10-12. Implementation and capacity: UNVERIFIED.
 The existing Next.js operator authentication and dashboard must be preserved. Rama is the primary maintainer. A separate Go controller would add deployment, internal authentication, and debugging boundaries without a demonstrated MVP need.
 
 ## Decision
+```mermaid
+flowchart LR
+  Operator[Operator browser] --> Next[Next.js UI and Route Handlers]
+  Next --> Services[Server-only domain services]
+  Services --> DB[(PostgreSQL)]
+  Edge[Edge Go agent] -->|Outbound HTTPS and mTLS| Proxy[Trusted reverse proxy]
+  Hub[Hub Go agent] -->|Outbound HTTPS and mTLS| Proxy
+  Proxy --> Next
+```
 Next.js owns the controller UI, Route Handler APIs, server-only domain services, and PostgreSQL persistence. Go agents run on Debian hubs and branches and initiate HTTPS polling to the controller. No separate Go controller API is planned. Scope remains single-customer L3 MVP.
 
 Operator sessions use existing auth; device identity is separate. A trusted reverse proxy verifies agent mTLS certificates and replaces caller identity headers. The upstream connection must be private and authenticated, with no direct bypass. Next.js checks device registration, revocation, and resource scope on every request. Enrollment uses server-authenticated TLS and a scoped, expiring, hashed, single-use credential before mTLS identity exists. Proxy products and exact configuration require verification in the enrollment milestone.
