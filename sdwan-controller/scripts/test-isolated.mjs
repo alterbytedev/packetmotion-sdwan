@@ -15,9 +15,8 @@ const url = new URL(connectionString);
 url.pathname = `/${name}`;
 const secret = randomBytes(32).toString('hex');
 const password = randomBytes(18).toString('base64url');
-const developerPassword = randomBytes(18).toString('base64url');
 const childEnv = { ...process.env, DATABASE_URL: url.toString(), CONTROLLER_SESSION_SECRET: secret,
-  CONTROLLER_PUBLIC_ORIGIN: 'http://127.0.0.1:3107', FABRIC_TEST_ISOLATED: '1', FABRIC_TEST_EMAIL: 'integration@example.test', FABRIC_TEST_PASSWORD: password, FABRIC_TEST_DEVELOPER_PASSWORD: developerPassword };
+  CONTROLLER_PUBLIC_ORIGIN: 'http://127.0.0.1:3107', FABRIC_TEST_ISOLATED: '1', FABRIC_TEST_EMAIL: 'integration@example.test', FABRIC_TEST_PASSWORD: password };
 function run(command, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { env: childEnv, stdio: 'inherit' });
@@ -38,10 +37,6 @@ try {
     const salt = randomBytes(16).toString('hex');
     await pool.query('INSERT INTO operators (email,password_hash) VALUES ($1,$2)', [childEnv.FABRIC_TEST_EMAIL, `${salt}:${scryptSync(password, salt, 64).toString('hex')}`]);
     await migrateController(pool);
-    const developerSalt = randomBytes(16).toString('hex');
-    await pool.query('INSERT INTO diagnostic_developer (id,password_hash) VALUES (TRUE,$1)', [
-      `${developerSalt}:${scryptSync(developerPassword, developerSalt, 64).toString('hex')}`,
-    ]);
   } finally { await pool.end(); }
   if (process.argv[2] === 'agent') {
     await run(process.execPath,['scripts/agent-smoke.mjs']);

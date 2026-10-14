@@ -1,7 +1,86 @@
-import { test, expect } from '@playwright/test';
+import { createHash } from 'node:crypto';
+import { expect, test } from '@playwright/test';
+import { signSession } from '../../src/lib/session';
 import { clearInventory, database, login } from './fixture';
 
 test.beforeEach(clearInventory);
+
+test('white-label branding is superadmin-only and the saved logo appears on login and dashboard', async ({
+  page,
+}) => {
+  const operator = await database(
+    async (pool) =>
+      (
+        await pool.query('SELECT email, password_hash FROM operators WHERE email=$1', [
+          process.env.FABRIC_TEST_EMAIL,
+        ])
+      ).rows[0],
+  );
+  const credentialVersion = createHash('sha256').update(operator.password_hash).digest('hex');
+  const session = signSession(
+    operator.email,
+    process.env.CONTROLLER_SESSION_SECRET!,
+    Date.now(),
+    credentialVersion,
+  );
+  await page
+    .context()
+    .addCookies([{ name: 'sdwan-session', value: session, url: 'http://127.0.0.1:3107' }]);
+  await page.goto('/dashboard/settings');
+  await expect(page.getByRole('heading', { name: 'White-label logo' })).toHaveCount(0);
+  const adminUpload = await page.request.put('/api/branding/logo', {
+    headers: { Origin: 'http://127.0.0.1:3107', 'Content-Type': 'image/png' },
+    data: Buffer.from('89504e470d0a1a0a', 'hex'),
+  });
+  expect(adminUpload.status()).toBe(403);
+
+  await database(async (pool) => {
+    await pool.query("UPDATE operators SET role='superadmin' WHERE email=$1", [
+      process.env.FABRIC_TEST_EMAIL,
+    ]);
+  });
+  try {
+    await page.goto('/dashboard/settings');
+    await expect(page.getByRole('heading', { name: 'White-label logo' })).toBeVisible();
+    await expect(page.getByText(/up to 2 MiB.*600 × 180 px/)).toBeVisible();
+    await expect(page.getByText('Default mark is in use')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Remove logo' })).toHaveCount(0);
+    const savedLogo = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/branding/logo') && response.request().method() === 'PUT',
+    );
+    await page.getByRole('button', { name: 'Upload a logo' }).setInputFiles({
+      name: 'brand.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    });
+    expect((await savedLogo).status()).toBe(200);
+    expect((await page.request.get('/api/branding/logo')).status()).toBe(200);
+    await expect(page.getByText('Custom logo')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Remove logo' })).toBeVisible();
+    await page.goto('/dashboard');
+    await expect(page.locator('#dashboard-navigation img[alt="Organization logo"]')).toBeVisible();
+    if (await page.getByRole('button', { name: 'Open navigation' }).isVisible())
+      await page.getByRole('button', { name: 'Open navigation' }).click();
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    if (await page.getByAltText('Organization logo').count()) {
+      await expect(page.getByAltText('Organization logo')).toBeVisible();
+    } else {
+      await expect(page.getByText('SD-WAN Controller', { exact: true })).toBeVisible();
+    }
+  } finally {
+    await database(async (pool) => {
+      await pool.query('DELETE FROM controller_branding WHERE id=TRUE');
+      await pool.query("UPDATE operators SET role='admin' WHERE email=$1", [
+        process.env.FABRIC_TEST_EMAIL,
+      ]);
+    });
+  }
+});
 
 test('admin creates site/device through UI, reloads persisted inventory and rejects invalid HTTP mutations', async ({
   page,
@@ -205,6 +284,41 @@ test('device table fetches bounded pages, searches across pages and opens scoped
       ]);
     });
   }
+});
+
+test('device network preview adds firewall rules in an accessible modal without persisting them', async ({
+  page,
+}) => {
+  const target = await database(async (pool) => {
+    const site = (
+      await pool.query(
+        "INSERT INTO sites(id,name,mode) VALUES(gen_random_uuid(),'Modal network','gateway') RETURNING id",
+      )
+    ).rows[0].id;
+    return (
+      await pool.query(
+        "INSERT INTO nodes(id,site_id,name,kind) VALUES(gen_random_uuid(),$1,'Modal edge','branch') RETURNING id",
+        [site],
+      )
+    ).rows[0].id;
+  });
+  await login(page);
+  await page.goto(`/dashboard/devices/${target}`);
+  await page.getByRole('button', { name: 'Add rule' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Firewall rule' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Rule name')).toBeFocused();
+  await dialog.getByLabel('Rule name').fill('Allow ERP');
+  await dialog.getByLabel('Action').selectOption({ label: 'Allow' });
+  await dialog.getByLabel('Source network').fill('10.61.0.0/24');
+  await dialog.getByLabel('Destination network').fill('10.62.0.0/24');
+  await dialog.getByLabel('Protocol and port').fill('TCP 443');
+  await dialog.getByRole('button', { name: 'Add to preview' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('Allow ERP', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Allow ERP', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Block unsolicited inbound', { exact: true })).toBeVisible();
 });
 
 test('async device search ignores older responses and recovers from load errors', async ({

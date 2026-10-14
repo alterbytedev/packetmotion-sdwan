@@ -382,3 +382,198 @@
 - Risks/limitations: other workflows in GitHub settings or external CI systems are unaffected; none were present in this repository's `.github/workflows/` directory at inspection.
 - Rollback: rename `.github/workflows/ci.yml.disabled` back to `.github/workflows/ci.yml`.
 - Next: re-enable by restoring the `.yml` extension when requested.
+## UI-NETWORK-PREVIEW — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; lint, typecheck and whitespace checks PASS.
+- Summary/reason: Added a preview-only device network configuration mockup for Business Policy, WAN/LAN IP addressing, operating/routing mode and hub preference, basic default-deny firewall examples, DNS/NAT and management access to support the requested SD-WAN-style configuration workflow.
+- Files: sdwan-controller/src/components/fabric/network-configuration-preview.tsx; sdwan-controller/src/components/fabric/device-details.tsx; docs/development/ui-component-architecture.md; this log.
+- Checks actually run: `npm run lint` PASS (Biome checked 74 files); `npm run typecheck` PASS (Next route type generation and `tsc --noEmit`); `git diff --check` PASS. No test suite or browser visual check run; UI visual rendering is UNVERIFIED.
+- UI/network impact: Additive card on existing device detail, composed from current UI primitives and tokens. No API, database, dependency, agent or network behavior changed. Local preview action does not persist or publish values. Admin controls are editable examples; viewer controls remain read-only.
+- Risks/limitations: Settings and rules are mock data only; they do not validate production configuration or represent applied device state. Visual layout has not been inspected in browser.
+- Rollback: Remove `network-configuration-preview.tsx`, its import/composition in `device-details.tsx`, and the corresponding component architecture note; no data/schema rollback.
+- Next: Review `/dashboard/devices/<id>` in desktop/mobile browser; implement persistence, validation, policy compilation and safe network apply only in their separately planned milestones.
+## UI-REUSABLE-MODAL — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; lint, typecheck and whitespace checks PASS.
+- Summary/reason: Added reusable accessible Modal and responsive ModalFooter primitives for future focused workflows, following the existing controller UI tokens and Button conventions.
+- Files: sdwan-controller/src/components/ui/modal.tsx; docs/development/ui-component-architecture.md; this log.
+- Checks actually run: `npm run lint` PASS (Biome checked 75 files); `npm run typecheck` PASS (Next route type generation and `tsc --noEmit`); `git diff --check` PASS. Browser interaction/visual tests not run; runtime focus behavior is UNVERIFIED.
+- UI/network impact: Adds an unused shared UI primitive; no existing pages, navigation, API, database, dependencies, agent or network behavior changed. Existing mobile navigation dialog remains untouched.
+- Risks/limitations: No consumer has been migrated to this new component; focus, backdrop and responsive behavior have not been exercised in a browser.
+- Rollback: Remove `src/components/ui/modal.tsx` and its documentation entry; no data or schema rollback.
+- Next: Use it when a concrete focused workflow needs a modal and add focused keyboard/browser coverage with that integration.
+## UI-DEVICE-NETWORK-MODALS — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; lint, typecheck and whitespace checks PASS. Targeted browser modal verification UNVERIFIED because the isolated runner failed operator login before reaching the new scenario on reruns.
+- Summary/reason: Reorganized the device network preview into compact section summaries and moved add/edit actions into reusable modals for Business Policy, firewall rules, interface/IP addressing, routing/hub preference, and essential settings. Local additions reset on reload and never publish to the device. Fixed modal initial focus to move to the first field after mount.
+- Files: sdwan-controller/src/components/fabric/network-configuration-preview.tsx; sdwan-controller/src/components/ui/modal.tsx; sdwan-controller/src/components/fabric/device-details.tsx; sdwan-controller/tests/browser/inventory.spec.ts; docs/development/ui-component-architecture.md; docs/evidence/browser/device-detail-desktop.png; docs/evidence/browser/device-detail-mobile.png; this log.
+- Checks actually run: `npm run lint` PASS (75 files); `npm run typecheck` PASS; `git diff --check` PASS. `npm run test:browser` initial run: 22/24 passed; the two new modal cases found initial field focus missing. Focus was fixed. Subsequent suite and targeted reruns failed before the affected page because the isolated test operator could not sign in (redirected to `/login`); login test screenshots/errors confirm the modal scenario was not reached. An initial existing browser run before the new scenario had passed all 22 then-existing tests. Desktop/mobile device-detail screenshots from that successful run show the reorganized layout; modal open state not captured.
+- UI/network impact: Existing device detail is now shorter and uses section actions; forms appear in accessible modal dialogs. Responsive detail view inspected via generated screenshots. No API, DB, agent, or network changes. All settings remain browser-local preview data.
+- Risks/limitations: Focus fix has not been confirmed by a successful browser rerun; new modal regression test is present but remains unverified due isolated operator login failures. UI does not persist, compile or apply network config.
+- Rollback: Revert this feature component and its composition in `device-details.tsx`; remove the added browser test and architecture note. Keep append-only log and evidence history as required.
+- Next: Rerun the targeted browser scenario when isolated operator login is working, inspect modal open/keyboard behavior on desktop/mobile, and then implement persistence/apply only in the planned network milestones.
+## UI-COMMON-COMPONENTS — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; lint, typecheck and whitespace checks PASS.
+- Summary/reason: Added commonly reused native form and layout primitives: Textarea, Checkbox, Separator, and FormField. Components use existing Tailwind tokens and React/native element conventions, with no new package or UI dependency.
+- Files: sdwan-controller/src/components/ui/textarea.tsx; sdwan-controller/src/components/ui/checkbox.tsx; sdwan-controller/src/components/ui/separator.tsx; sdwan-controller/src/components/ui/form-field.tsx; docs/development/ui-component-architecture.md; this log.
+- Checks actually run: `cd sdwan-controller && npm run lint` PASS (79 files); `cd sdwan-controller && npm run typecheck` PASS; `git diff --check` PASS. No tests added or run; no consumer integration or browser visual verification performed.
+- UI/network impact: Adds unused shared primitives only. No existing page, API, database, dependency, agent or network behavior changed. Appearance follows current tokens; visual rendering is UNVERIFIED.
+- Risks/limitations: FormField labels its generated ID, but controls should be given the matching `id` (or supplied `htmlFor`) explicitly. Checkbox should be paired with a visible label. No active screens were migrated.
+- Rollback: Remove the four new component files and their architecture documentation section; no data/schema rollback.
+- Next: Reuse these primitives in future forms where their behavior fits and verify the consuming workflow in the browser.
+## WHITELABEL-LOGO — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; migration 0005 applied to the configured local development database. No operator was promoted automatically.
+- Summary: Added a distinct superadmin role and CLI role assignment, preserving existing admin/viewer assignments. Added a superadmin-only branding editor and server-enforced same-origin upload/removal, bounded PNG/JPEG/WebP storage, public logo retrieval, and login/dashboard display with proportional scaling and a default fallback. The editor provides light/dark previews, transparency guidance, 600 × 180 px recommendation, and a 2 MiB limit.
+- Files: `sdwan-controller/migrations/0005_branding.sql`; `scripts/set-operator-role.mjs`; `src/lib/branding.ts`; `src/app/api/branding/logo/route.ts`; `src/components/brand-logo.tsx`; `src/components/fabric/branding-settings.tsx`; dashboard/login and role authorization files; tests for authorization, asset validation, database persistence, and browser journey; `api/openapi.yaml`; controller README, workspace status, UI architecture docs; existing device-detail desktop/mobile browser evidence was regenerated during the full suite (both files were already modified before this task).
+- Checks: `npm test` PASS (25); `npm run test:integration` PASS (18); `npm run lint` PASS; `npm run typecheck` PASS; `npm run build` PASS; focused white-label browser journey PASS on desktop and mobile (1 each); `npm run migrate:controller` PASS; `git diff --check` PASS. Full `npm run test:browser` was 20/26 on the first run, with unrelated baseline login, existing modal focus, mobile navigation, and then-unfixed branding selector/mobile cases. The branding cases were corrected and passed in focused reruns; the entire browser suite was not rerun after those fixes.
+- UI/network impact: Branding controls appear only for superadmins; admins/viewers retain normal existing access. Login and dashboard navigation use the stored image with `object-fit: contain`. No network, agent, or forwarding behavior changed.
+- Risks/limitations: A trusted operator still needs explicit assignment with `npm run set:operator-role -- <email> superadmin`. The 600 × 180 px size is a recommendation, not an enforced dimension; contrast should be checked in the provided previews.
+- Rollback: Restore an operator's previous role with `set:operator-role`; revert the branding UI/API/service bindings while retaining applied migration 0005 and stored branding data. Do not edit or roll back the applied migration.
+- Next: Assign the intended superadmin, then upload and review the logo in Settings before sharing the branded login/dashboard.
+## DOCS-NPM-COMMANDS — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; package script coverage and whitespace checks PASS.
+- Summary/reason: Added a complete categorized `npm run` reference to the controller README, with operator/superadmin, diagnostic-user, migration, device CA, development, and verification workflows.
+- Files: `sdwan-controller/README.md`; this log.
+- Checks actually run: Node coverage check confirmed all 19 scripts declared in `package.json` appear in the README; `git diff --check` PASS. No application tests run because this was a documentation-only change.
+- UI/network impact: Documentation only; no UI, API, database, agent, or network behavior changed.
+- Risks/limitations: Command behavior is described from the current package scripts and README guidance; the commands were not executed as part of this documentation update.
+- Rollback: Revert the npm commands section in `sdwan-controller/README.md`; no data or schema rollback.
+- Next: Follow the documented commands as needed for local setup and operations.
+## DIAGNOSTICS-SUPERADMIN — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; focused browser authorization, unit/integration, lint, typecheck and production build checks PASS.
+- Summary/reason: Removed the separate developer diagnostic login and CLI setup/reset workflow. Added a dashboard Diagnostics link visible only to superadmins and server-side `/diagnosticlogs` authorization using the current operator role; anonymous users redirect to login, admins/viewers redirect to dashboard. Updated README, security, operations, status, PRD and agent instructions.
+- Files: `sdwan-controller/src/app/diagnosticlogs/page.tsx`; `src/components/controller-dashboard.tsx`; deleted `src/app/diagnosticlogs/login/route.ts`, `src/app/diagnosticlogs/logout/route.ts`, `src/lib/diagnostic-auth.ts`, `scripts/setup-developer.mjs`; `package.json`; `scripts/test-isolated.mjs`; browser authorization test replacing removed diagnostic login tests; `sdwan-controller/README.md`, `sdwan-controller/AGENTS.md`, root `AGENTS.md`; `docs/architecture/security-model.md`, `docs/operations/runtime-error-troubleshooting.md`, `docs/STATUS.md`, `docs/prd/packetmotion-fabric-v1.1.md`, `docs/development/implementation-plan.md`; this log.
+- Checks actually run: `npm test` PASS (25); `npm run test:integration` PASS (15); focused `npm run test:browser -- tests/browser/diagnostic-logs.spec.ts` PASS (4: desktop/mobile superadmin access and admin/viewer/anonymous denial); `npm run lint` PASS (80 files); `npm run typecheck` PASS; `npm run build` PASS; `git diff --check` PASS; README coverage check PASS (all 18 remaining package scripts listed). Earlier intermediate focused browser iterations failed due test navigation/login setup and mobile drawer interaction; the test was revised to validate the route response and mobile menu visibility, then the final focused run passed.
+- UI/network impact: Superadmin-only menu entry and read-only diagnostic page authorization; no network, agent, or forwarding behavior changed.
+- Risks/limitations: Migration 0004 is already applied and remains immutable. Its `diagnostic_developer` table and any existing password hash remain unused in PostgreSQL; no code or command can authenticate with that credential. Removing the stored legacy row/table requires a separately authorized destructive migration.
+- Rollback: Restore the prior diagnostics auth/page/routes/CLI and dashboard navigation if required; retain migration history and do not edit migration 0004. No network rollback.
+- Next: Deploy the code so the route requires a superadmin session; decide separately whether to authorize a follow-up migration that removes the obsolete stored credential table/data.
+## DOCS-ROLE-COMMAND-EXAMPLES — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; whitespace check PASS.
+- Summary/reason: Clarified the operator-role command syntax and added concrete superadmin, admin, and viewer examples in the controller README.
+- Files: `sdwan-controller/README.md`; this log.
+- Checks actually run: `git diff --check` PASS. No application tests run; documentation-only change.
+- UI/network impact: Documentation only; no application or database behavior changed.
+- Risks/limitations: Examples use placeholder email addresses and must be replaced with existing operators.
+- Rollback: Revert the added example commands and syntax clarification; no data/schema rollback.
+- Next: Operators can copy the example matching the role they intend to assign.
+## DOCS-NPM-COMMANDS-TOP — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; top-of-README script coverage and whitespace checks PASS.
+- Summary/reason: Moved the complete npm command catalog and role examples to immediately after the README title so operators can find all commands first.
+- Files: `sdwan-controller/README.md`; this log.
+- Checks actually run: Node verification confirmed all 18 scripts in `package.json` appear before Quick start; `git diff --check` PASS. No application tests run; documentation-only change.
+- UI/network impact: Documentation only; no application or network behavior changed.
+- Risks/limitations: Examples use placeholder operator emails.
+- Rollback: Move the npm command section back below Development; no data/schema rollback.
+- Next: Use the top section as the command reference.
+## OPERATOR-ROLE-LOCALHOST — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; localhost email support and role assignment verified.
+- Summary/reason: Aligned the operator-role CLI email validation with initial admin setup so the supported development address `admin@localhost` is accepted. Added validation tests and documented the exact command. Ran the requested command successfully and promoted the existing local development operator to superadmin.
+- Files: `sdwan-controller/scripts/set-operator-role.mjs`; new `scripts/lib/operator-role.mjs`; new `tests/operator-role.test.mjs`; `sdwan-controller/README.md`; this log.
+- Checks actually run: `node --test tests/operator-role.test.mjs` PASS (2); `npm test` PASS (27); `npm run lint` PASS (80 files); `npm run typecheck` PASS; `git diff --check` PASS; `npm run set:operator-role -- admin@localhost superadmin` PASS (`Updated admin@localhost to superadmin`).
+- UI/network impact: No network behavior changed. The configured local operator now has superadmin permissions, including branding and diagnostics.
+- Risks/limitations: The role command updates the operator found by email in the configured `DATABASE_URL`; it does not create a missing operator.
+- Rollback: Run `npm run set:operator-role -- admin@localhost admin` from `sdwan-controller/` to restore the prior role.
+- Next: Sign in again if needed; existing sessions remain valid and role changes are loaded from PostgreSQL.
+## LOGIN-REMOVE-ORG-LOGO — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; focused lint, typecheck and whitespace checks PASS.
+- Summary/reason: Removed the organization logo container from the `/login` form panel as requested; retained the rest of the login layout and behavior.
+- Files: `sdwan-controller/src/app/login/page.tsx`; this log.
+- Checks actually run: `npm run lint` PASS (80 files); `npm run typecheck` PASS; `git diff --check` PASS. An initial typecheck caught a removed import still needed by the desktop hero; the import was restored and the final typecheck passed.
+- UI/network impact: Removes the compact organization logo from the login page's form side. No network behavior changed.
+- Risks/limitations: The branding logo remains visible in the desktop hero panel.
+- Rollback: Restore the `BrandLogo` import and wrapper before the login form content.
+- Next: Run focused lint and typecheck; update this entry with results.
+## DEVICE-DETAIL-UX — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; lint, typecheck and whitespace checks PASS. Browser visual verification UNVERIFIED.
+- Summary/reason: Improved the device detail header and status area so operators can scan device/site identity, kind, controller connection and last management check-in. Device ID is tucked into a disclosure and has a copy action. Enrollment action is clearer and remains limited to authorized operators with not-enrolled devices. Added explicit copy that status is management-only, without implying tunnel or routing health.
+- Files: `sdwan-controller/src/components/fabric/device-details.tsx`; this log.
+- Checks actually run: `cd sdwan-controller && npm run lint` PASS (80 files); `npm run typecheck` first exposed a missing `CardDescription` import, fixed; final `npm run typecheck` PASS; `git diff --check` PASS. Browser/visual checks not run.
+- UI/network impact: Presentation-only device detail update using existing Button, Badge, Card, and icon dependencies. Responsive status cards and expandable ID details; no API, database, agent, or network behavior changed.
+- Risks/limitations: Local browser rendering and clipboard interaction are not visually/functionally verified. Clipboard denial shows manual-copy guidance.
+- Rollback: Revert the device detail composition in `device-details.tsx`; no data/schema rollback.
+- Next: Review the device detail page at desktop and mobile widths in the local browser and update evidence if requested.
+## DOCS-AUDIENCE-INDEX — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; index links and whitespace check PASS.
+- Summary/reason: Added separate entry points for AI agent workflow and human-facing product/architecture/operations material without copying authoritative content. Updated root AGENTS.md so agents consult the agent index, update source documentation only when behavior/instructions/contracts/workflows/status are affected, and maintain the relevant index for document moves/additions.
+- Files: `AGENTS.md`; `docs/README.md`; new `docs/agent/README.md`; new `docs/human/README.md`; this log.
+- Checks actually run: manually inspected the new index links and all current `AGENTS.md` references; `git diff --check` PASS. No application tests run because this is documentation-only.
+- UI/network impact: None; documentation navigation and maintenance rules only.
+- Risks/limitations: Existing source documents stay at their current paths and are shared by both audiences to avoid duplicate content and breakage of established references. This task creates audience-specific indexes, not duplicated/moved copies.
+- Rollback: Revert the index additions and root AGENTS.md edits; no application or data rollback.
+- Next: Use the AI agent index for implementation work and the human index for product, architecture, and operational reading.
+## DEVICES-UX-001 — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; lint/typecheck PASS; focused inventory browser run FAIL due isolated login failures; baseline browser PASS.
+- Summary: improved the Devices inventory hierarchy with four compact summary cards, explicit management-heartbeat scope, device-kind icons and clearer connection-state badges, responsive search/refresh controls, clear-search action, and a stronger initial empty state. Summary metrics use server-provided whole-inventory connection count and visible filtered page count; no false whole-inventory count is inferred from a page.
+- Files: sdwan-controller/src/components/fabric/device-inventory.tsx; this log.
+- Checks actually run: `npm run lint` PASS (80 files); `npm run typecheck` PASS; `git diff --check -- src/components/fabric/device-inventory.tsx` PASS; `npm run test:baseline` PASS (desktop/mobile, 2 tests). `npm run test:browser -- --grep 'admin creates site/device|device table fetches bounded pages'` FAIL (4 desktop/mobile cases) because disposable operator login stayed on `/login`; an intermediate run reached page assertions and identified accessible-name/pagination copy compatibility details, which were corrected. Inventory browser coverage is UNVERIFIED after final correction because the subsequent run again failed at login. No successful device journey is claimed.
+- UI/network impact: inventory presentation and accessible content only; existing roles, APIs, data, enrollment and network behavior preserved. The copy explicitly limits status to management heartbeat and does not imply tunnel/routing health.
+- Risks: browser regression evidence for modified device rows remains incomplete due isolated fixture login instability. No schema/data/network change. Rollback: revert only this file's task-owned changes; preserve the pre-existing user modifications in this same file.
+- Next: rerun focused inventory browser tests once isolated login is stable; inspect updated desktop/mobile screenshots.
+
+## CHANNEL-HARDENING-M1-M2 — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED; focused and broader verification PASS; final extended ingress smoke/build pending. User approved the implementation plan.
+- Summary: Hardened existing shared Go agent rather than replacing it. Heartbeat/config attempts fail independently; pending heartbeats clear on heartbeat success, renewal runs before reconciliation, unsupported checksummed configurations receive rejected acknowledgements without advancing state. Receipt acknowledgement is durable and retried after restart. Unchanged configurations avoid writes/acks; corrupt cache is repaired. Optional revision/checksum retrieval omits unchanged payloads while retaining mTLS/device scope and legacy responses. Startup jitter and bounded HTTP connections/timeouts reduce reconnect pressure.
+- Files: sdwan-edge/{cmd/fabric-agent/main.go,internal/agent/agent.go,internal/agent/agent_test.go,internal/controller/client.go,internal/identity/state.go}; sdwan-controller/src/{lib/fabric/channel.ts,app/api/agent/v1/desired/route.ts}; sdwan-controller/tests/integration/agent-channel.test.mjs; api/openapi.yaml; ingress smoke additions in progress.
+- Tests: focused go test ./internal/agent ./internal/identity ./internal/controller PASS; go test ./... PASS; go test -race ./... PASS; go vet ./... PASS; go build -o /tmp/packetmotion-fabric-agent ./cmd/fabric-agent PASS; controller npm test PASS (27); lint/typecheck PASS; test:integration PASS (15); test:agent PASS. Initial integration run failed because deep equality compared objects from different VM prototypes; corrected to field assertions and rerun passed.
+- UI/network impact: No UI or privileged network changes; desired remains staged, never applied. No migration.
+- Risks: Polling remains bounded request/response; no streaming or production capacity guarantee. Current rejection/error retries use shared cycle backoff. Production/Debian/network-plane scenarios UNVERIFIED.
+- Rollback: Deploy previous compatible agent/controller, preserving identity state, revisions, schema and logs; legacy clients request full payloads. Preserve pre-existing worktree edits.
+- Next: Extended mTLS unchanged-read smoke, local concurrent baseline, build and operations documentation.
+
+## CHANNEL-HARDENING-M3-CLOSURE — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED and locally verified within approved management-channel plan. Production release readiness remains UNVERIFIED.
+- Summary: Extended real Go/NGINX/Next smoke with compact unchanged response, repeat-cycle identity stability and a bounded concurrent-read baseline; documented deployment order, recovery, acknowledgement durability, telemetry latency and capacity limits. Added management operations guide to both audience indexes; updated agent guide and status. No architecture replacement or new UI dependency.
+- Files: sdwan-controller/scripts/agent-smoke.mjs; sdwan-edge/README.md; docs/operations/management-channel.md (new); docs/agent/README.md; docs/human/README.md; docs/STATUS.md; this log. Core implementation files recorded in CHANNEL-HARDENING-M1-M2 above.
+- Tests actually run: extended npm run test:agent PASS (real Edge/Hub binaries, NGINX syntax/mTLS, conditional reads, telemetry, scope/spoof/bypass/revocation checks); npm run build PASS; git diff --check PASS. Earlier final checks: npm test PASS (27), test:integration PASS (15), lint/typecheck PASS; Go tests/race/vet/build PASS. Go runtime verified go1.27.2 darwin/arm64; Linux amd64/arm64 builds checked separately below.
+- Measurement: 40 unchanged authenticated reads, eight concurrent connections, 68.7 ms p95, 141.3 ms total, zero failed reads. Local Next development server, two enrolled devices; does NOT establish production fleet capacity or heartbeat write throughput.
+- UI/network impact: Existing UI/auth unchanged; no migrations or privileged network modifications. Configuration stays staged/received. Browser/visual tests not run because no UI changes. Public deployment, Debian service/reboot, mixed fleet/retry storms and all network-plane behavior UNVERIFIED.
+- Risks: Shared cycle backoff can slow telemetry after config/renewal failures; pending heartbeat is memory-only; no streaming SLA or durable telemetry event archive. Production PKI custody/storage and scale need deployment/lab evidence.
+- Rollback: Revert only task-owned code and restore compatible binaries; retain identities, revisions, schema and logs. Controller-first upgrade; full-payload fallback preserves old/new interoperability.
+- Next: Deploy to authorized isolated Debian lab and measure sustained mixed fleet load/outage recovery before production capacity commitments.
+
+- CHANNEL-HARDENING final cross-build evidence: `GOOS=linux GOARCH=amd64 go build -o /tmp/packetmotion-fabric-agent-linux-amd64 ./cmd/fabric-agent` PASS; equivalent Linux arm64 build PASS. Artifacts are in /tmp; no binaries added to the repository. Final whitespace check PASS.
+
+## BOOTSTRAP-MAC-ETHN — 2026-10-14 — Codex /root
+
+- Status: IMPLEMENTED and statically/fixture verified. User explicitly requested automatic physical interface scan, MAC sort and eth0/eth1/etc names. Debian VM reboot/connectivity remains UNVERIFIED.
+- Summary: Standalone v1.8 bootstrap embeds a Python helper, adds python3 package, automatically scans permanent physical Ethernet MACs, sorts byte order, and stages a fixed ethN mapping. An early systemd service waits for udev, performs two-phase temporary-name renaming to handle ethN collisions/swaps, and gates supported networking/FRR services. No live rename; no host bootstrap executed. Existing GRUB arguments preserved. Known network, FRR, nftables/WireGuard and PacketMotion helper references migrate simultaneously with private backups, permissions/ownership preservation and recoverable transaction metadata. Live/duplicate/wildcard/custom-rule/foreign-service/hardware-change conflicts fail safely; rollback preserves edits. New step explicitly marks names staged/unverified; reboot defaults to later.
+- Files: sdwan-edge/sdwan-provisioning-scripts/packetmotion-fabric-bootstrap-v1.8.sh; new adjacent README.md; new tests/bootstrap-interface-names.test.mjs; sdwan-edge/README.md; docs/agent/README.md; docs/human/README.md; this log. Prior worktree edits retained.
+- Tests actually run: bash syntax via bash -n PASS; node --test tests/bootstrap-interface-names.test.mjs PASS (2 Node tests including 13 Python fixture scenarios for sorting/migration/swaps/idempotence/rollback/write failure/rule conflicts/hardware changes/live refusal/rename recovery). Initial wildcard detector falsely matched the wildcard in a normal include path; fixed tokenization and reran PASS. cd sdwan-controller && npm test PASS (29). Disposable Debian bookworm/trixie containers: fixture staging, systemd-analyze verify on generated unit and shellcheck -S error PASS. Container static validation does NOT verify actual NIC renaming or boot. No Go/UI code changed; Go/browser/visual tests not run.
+- UI/network impact: No Controller UI/auth or management-agent changes. When executed on an appliance, bootstrap stages next-boot physical NIC renaming and modifies known persistent interface references. Installed helper is root-only; backups are sensitive and private. Unsupported/custom consumers require review before reboot; no claim of exhaustive host config migration.
+- Risks/limits: Boot naming fails closed for unexpected/late hardware, occupied targets or already-UP changing ports; console required. No hotplug remapping; additional/replaced NICs require review. Other managers/custom scripts/early networking are not proven. Data-plane/SSH connectivity, real Debian boot and console rollback remain UNVERIFIED.
+- Rollback: On appliance console run /usr/local/libexec/packetmotion-interface-names rollback, then systemctl daemon-reload and reboot after success; helper restores unchanged staged files and removes generated service/drop-ins/enablement. Reconcile operator-modified files against private backups before rollback. Repository rollback reverts only this task's edits, preserving history and unrelated changes.
+- Next: In isolated Debian 12/13 VM with console, run bootstrap, reboot, verify MAC-to-ethN mapping, management address/default route/SSH and console rollback.
+## BRANDING-UX-001 — 2026-10-14 — Codex /root
+
+- Status: implementation complete; browser journey remains UNVERIFIED due to isolated runner timeout.
+- Summary/reason: clarified the superadmin logo workflow with side-by-side light/dark preview panels, explicit default/custom/preview-unavailable states, compact file guidance, accessible file control name, progress and result announcements, and conditional removal action. Updated the existing branding browser assertions for state, upload guidance, control access, and removal availability.
+- Files: sdwan-controller/src/components/fabric/branding-settings.tsx; sdwan-controller/tests/browser/inventory.spec.ts (pre-existing unrelated test edits preserved).
+- Checks: npm run typecheck PASS; npm run lint PASS; git diff --check PASS. `npm run test:browser -- --grep "white-label branding"` attempted repeatedly and FAILED because `page.waitForResponse` for the logo PUT timed out at the file upload step in both desktop and mobile isolated runs. Earlier attempt passed desktop but mobile failed due login fallback selector; that selector was adapted, but latest repeat still times out. No successful browser journey claimed.
+- UI/network impact: settings presentation and accessible feedback only; no network plane, API, schema, auth or dependency changes.
+- Risks: end-to-end upload flow is not verified in this local isolated browser runner. Preview assumes the default state until an upload in this component session; persisted custom logo state is not initialized from the server.
+- Rollback: revert only this component's changes; preserve pre-existing tests and branding API/schema work.
+- Next: investigate isolated runner upload request timeout separately, then verify desktop/mobile branding journey.
+
+## GITIGNORE-PNG-001 — 2026-10-14 — Codex /root
+
+- Status: COMPLETE.
+- Summary/reason: added a PNG-specific ignore rule under dependency directories so package artwork cannot surface as untracked files while keeping reviewed browser evidence available to Git.
+- Files: .gitignore; this log.
+- Checks actually run: `git check-ignore -v sdwan-controller/node_modules/playwright-core/lib/server/chromium/appIcon.png` PASS; `git check-ignore -v docs/evidence/browser/device-detail-desktop.png` correctly reports tracked evidence is not ignored; `git diff --check -- .gitignore` PASS. No application tests run; ignore-only change.
+- UI/network impact: none; tracked screenshot evidence remains tracked.
+- Risks: none identified. Rollback: remove the `**/node_modules/**/*.png` rule.
+- Next: inspect `git status` before committing; existing local changes are preserved.

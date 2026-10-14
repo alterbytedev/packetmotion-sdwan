@@ -13,7 +13,7 @@ Next.js 16.4.0 App Router, React 19.3.0, TypeScript, Tailwind CSS 4.2.1, Lucide 
 | Mobile navigation | Prevent hidden links receiving focus, contain focus while open, close with Escape and restore trigger focus; keep desktop navigation and shell appearance. |
 | Tables/cards | Keep the inventory table and overview grid distinct. Add table header semantics. Existing Card composition remains authoritative. |
 | Clipboard | Catch failed writes and announce feedback without logging tokens. |
-| Other UI | No dialogs, custom dropdown menus, tabs, tooltips, popovers, skeletons or toast library exist; do not add unused abstractions. |
+| Other UI | A reusable Modal primitive is available for focused workflows; do not add custom dropdown menus, tabs, tooltips, popovers, skeletons or a toast library without a concrete need. |
 
 ## Existing primitives
 
@@ -22,6 +22,10 @@ Next.js 16.4.0 App Router, React 19.3.0, TypeScript, Tailwind CSS 4.2.1, Lucide 
 - Select: native select props and ref, `containerClassName` for wrapper sizing; children are native options. The decorative chevron is hidden from assistive technology. Pagination retains its compact height.
 - Card: compose CardHeader, CardTitle, CardDescription and CardContent; use existing contextual spacing.
 - Badge: span props, existing pill geometry; contextual classes preserve current presentations.
+- Textarea: native textarea props/ref, resizable multi-line field with matching Input focus and disabled styles.
+- Checkbox: native checkbox props/ref with the shared primary checked state and focus ring; pair with a visible label.
+- Separator: semantic horizontal rule with horizontal or vertical orientation for grouping content.
+- FormField: labeled field wrapper with optional hint/error text and generated control ID; pass `htmlFor` when children do not render a single control using that ID.
 
 ## New reusable behavior
 
@@ -56,3 +60,23 @@ Dashboard screens use App Router paths: `/dashboard` (overview), `/dashboard/dev
 ## Diagnostic report copy action — 2026-10-12
 
 `app/diagnosticlogs/copy-log-button.tsx` is feature-specific client behavior, not a generic clipboard primitive. It accepts `referenceId` for its accessible button name and a preformatted `report` string from the server page. It composes the existing outline `Button` and `Feedback` components, announces copy success/failure, and copies the incident context as plain text. Use it once for each diagnostic record; do not pass unredacted secrets or introduce external telemetry.
+
+## Device network configuration preview — 2026-10-14
+
+`components/fabric/network-configuration-preview.tsx` is a device-detail-only mockup for intended operating mode, hub preference, WAN/LAN addressing, business traffic classes, basic default-deny firewall rules, DNS/NAT, and management access. It composes the existing Card, Badge, Button, Input, and Select primitives; no shared primitive or UI dependency was added. Admins can edit illustrative local fields and request a local preview; viewer controls are read-only. The `Preview only` status and explanatory copy make clear that values are neither persisted nor sent to a device. Do not present these examples as applied configuration or verified network health. Remove this feature component and its `DeviceDetails` composition to roll it back; no schema or data rollback is needed.
+
+## Reusable modal — 2026-10-14
+
+`components/ui/modal.tsx` exports `Modal` and `ModalFooter`. `Modal` requires controlled `open`, `onOpenChange`, and an accessible `title`; optional `description`, children, `size` (`sm`, `md`, `lg`, `xl`), backdrop/Escape behavior, close button visibility, and className customize each use. It renders an accessible modal dialog, traps Tab focus, focuses the first available control, locks body scrolling, and restores focus on close. Use for short focused workflows and compose existing form and button primitives inside. Keep long multi-step flows on a page. `ModalFooter` aligns actions responsively. The existing mobile navigation dialog remains specialized and unchanged. Roll back by removing this file and its documentation entry; no current feature depends on it.
+
+## Additional common primitives — 2026-10-14
+
+`Textarea` supports native multiline input attributes, `Checkbox` wraps a native checkbox input, `Separator` renders a semantic `<hr>` with horizontal/vertical orientation, and `FormField` provides a label plus optional hint and error copy. These are generic UI building blocks only; consumers own form state, validation, and submission. Use `FormField` with a single labeled control and pass the same `htmlFor` value to the control's `id` when the control does not inherit an ID. No current feature was migrated as part of this addition.
+
+## Device network preview modal workflows — 2026-10-14
+
+`components/fabric/network-configuration-preview.tsx` uses `Modal` for adding illustrative firewall rules, business policies and interfaces, and editing routing or essential settings. The detail view now shows compact summary rows and tables with section-level actions. Admin changes live in component state only and reset on reload; viewers have read-only content. Keep the preview-only warning visible, and do not connect these actions to desired revision publishing or describe them as applied until validated persistence, policy compilation and safe agent apply exist. The browser spec covers modal access and no-persistence behavior; current isolated test runner intermittently failed operator sign-in before reaching this test, so that coverage remains unverified after the latest focus fix.
+
+## White-label branding settings — 2026-10-14
+
+`components/fabric/branding-settings.tsx` is a superadmin-only feature component inside Controller Settings. It uploads/removes a raster logo, shows light/dark contrast previews, and explains the recommended 600 × 180 px size, accepted PNG/JPEG/WebP formats, 2 MiB limit, transparent image support, and contain-without-cropping behavior. `components/brand-logo.tsx` is the small shared display wrapper used on login and dashboard navigation; it keeps a default mark when no logo is configured. Branding writes are authorized server-side and the public read route exposes only this logo asset. No generic UI primitive or dependency was added.

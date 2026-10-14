@@ -63,6 +63,21 @@ try{
  const received=await pool.query('SELECT status FROM config_acknowledgements WHERE node_id=$1',[nodeId]);assert.equal(received.rows[0].status,'received');
  const telemetry=await operator(`/api/operator/nodes/${nodeId}/telemetry`);assert.equal(telemetry.status,200);assert.equal(telemetry.body.telemetry.snapshot.agentVersion,'0.1.0');
  const staged=JSON.parse(await readFile(join(stateDirectory,'desired.json'),'utf8'));assert.equal(staged.deviceKind,'branch');
+ const persisted=JSON.parse(await readFile(join(stateDirectory,'identity.json'),'utf8'));
+ const conditionalPath=`/api/agent/v1/desired?revision=${persisted.revision}&checksum=${persisted.checksum}`;
+ const conditional=await request(origin,conditionalPath,{certificate:state.certificate,key:state.privateKey});
+ assert.equal(conditional.status,200);assert.equal(conditional.body.unchanged,true);assert.equal(conditional.body.payload,undefined);
+ await run(binary,['run','--once','--state-dir',stateDirectory]);
+ assert.equal(await readFile(join(stateDirectory,'identity.json'),'utf8'),JSON.stringify(persisted));
+ const timings=[];const loadStarted=performance.now();
+ await Promise.all(Array.from({length:8},async()=>{
+  const connection=new https.Agent({ca:serverCA,cert:state.certificate,key:state.privateKey,keepAlive:true,maxSockets:1});
+  try {for(let i=0;i<5;i++) {const started=performance.now();const result=await request(origin,conditionalPath,{agent:connection});assert.equal(result.status,200);assert.equal(result.body.unchanged,true);timings.push(performance.now()-started);}}
+  finally {connection.destroy();}
+ }));
+ timings.sort((a,b)=>a-b);
+ console.log(`Management baseline: 40 unchanged reads, 8 concurrent connections, p95=${timings[Math.ceil(timings.length*.95)-1].toFixed(1)}ms, duration=${(performance.now()-loadStarted).toFixed(1)}ms. Local development sample; not production capacity.`);
+
  const hubCreated=await operator('/api/operator/nodes',{name:'Real Go Hub',kind:'hub',mode:'gateway'});assert.equal(hubCreated.status,201);
  const hubDirectory=join(directory,'hub-state');
  await run(binary,['enroll','--controller',origin,'--server-ca',ca,'--state-dir',hubDirectory],{...process.env,FABRIC_ENROLLMENT_TOKEN:hubCreated.body.enrollment.token});

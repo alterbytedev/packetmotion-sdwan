@@ -2,7 +2,7 @@
 
 ## Mandatory startup
 1. Inspect the repository and git status; never overwrite user or other agent changes.
-2. Read `docs/prd/packetmotion-fabric-v1.1.md`, `docs/development/testing-strategy.md`, `docs/development/implementation-plan.md`, and relevant architecture docs.
+2. Read `docs/agent/README.md` for the agent workflow, then consult the relevant source documents under `docs/` and `docs/human/README.md` for current product, architecture, operations, or status context.
 3. Review latest `docs/change-logs/` entries.
 4. Identify scope, risks, impacted files, tests and rollback before editing.
 
@@ -33,7 +33,9 @@
 - Rotate at 500 KiB; continue sequential numbering without overwriting history; maintain `docs/change-logs/README.md`.
 - For concurrency, serialize appends with a lock or equivalent safe mechanism. Do not claim the logs are safe under concurrent writes without testing.
 - Every response after changes: status, summary, changed files, tests actually run, UI/network impact, risks, rollback, log path, next step.
-- Update docs and architecture decisions when behavior changes.
+- Update documentation when the change makes existing instructions, behavior descriptions, setup steps, API contracts, architecture, security guidance, status, or user workflows inaccurate or incomplete. If none of those are affected, do not add a documentation edit just to satisfy a checklist; still append the required change log.
+- Keep agent workflow and implementation guidance discoverable through `docs/agent/README.md`; keep product, architecture, operational, status, and evidence material discoverable through `docs/human/README.md`. Update the relevant index when adding, moving, or renaming a document.
+- Update architecture decision records when a consequential architecture decision changes; routine implementation details belong in the relevant source document and change log.
 
 ## Execution boundary
 - Initial Plan Mode: inspect and propose, do not modify application code.
@@ -65,6 +67,6 @@
 7. Apply controller migrations with `npm run migrate:controller` before deploying code that depends on them. Never edit an applied migration; add a follow-up migration instead.
 8. When changing error capture, verify the relevant server/browser capture path, safe persistence, reference correlation, and recovery controls with focused tests.
 9. Document capture coverage and limitations, including behavior when PostgreSQL is unavailable and any authentication requirement for browser-submitted reports.
-10. Keep diagnostic log access isolated from operator and agent identities; never grant dashboard privileges to the diagnostic-only developer account.
-11. Provision or rotate the `developer` password only through the controller CLI; generate it randomly, store only its password hash, and display it only at creation/reset.
-12. Protect diagnostic pages with rate-limited authentication, secure HTTP-only cookies, and read-only access to logs. Password resets must invalidate existing diagnostic sessions.
+10. Keep diagnostic logs unavailable to admin, viewer and agent identities. `/diagnosticlogs` uses an operator session restricted to the current `superadmin` role, and the page must enforce that role server-side even when the menu hides the link.
+11. Do not maintain a separate diagnostic developer user or login.
+12. Keep diagnostic pages read-only and treat log output as sensitive operational data; retain rate-limited authenticated browser reporting and redaction controls.

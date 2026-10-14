@@ -13,6 +13,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "setup:admin": "node scripts/setup-admin.mjs",
     "init:admin": "node scripts/setup-admin.mjs",
+    "set:operator-role": "node scripts/set-operator-role.mjs",
     "migrate:auth": "node scripts/migrate-auth.mjs",
     "test": "node --test tests/*.test.mjs ../tests/*.test.mjs",
     "test:integration": "node scripts/test-isolated.mjs",
@@ -20,8 +21,6 @@
     "test:baseline": "node scripts/test-isolated.mjs baseline",
     "migrate:controller": "node scripts/migrate-controller.mjs",
     "errors:show": "node scripts/show-runtime-error.mjs",
-    "init:developer": "node scripts/setup-developer.mjs",
-    "reset:developer": "node scripts/setup-developer.mjs --reset",
     "test:visual": "node scripts/compare-browser-baseline.mjs",
     "test:agent": "node scripts/test-isolated.mjs agent",
     "init:device-ca": "node scripts/init-device-ca.mjs"

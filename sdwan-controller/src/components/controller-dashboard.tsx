@@ -6,6 +6,7 @@ import {
   Activity,
   ArrowRight,
   ArrowUpRight,
+  Bug,
   Check,
   ChevronRight,
   CircleHelp,
@@ -15,7 +16,6 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  Network,
   Radio,
   Server,
   Settings2,
@@ -33,6 +33,7 @@ import { DeviceDetails } from '@/components/fabric/device-details';
 import { DeviceInventory } from '@/components/fabric/device-inventory';
 import { ControllerHealthCard } from '@/components/fabric/controller-health-card';
 import { ControllerSettings } from '@/components/fabric/controller-settings';
+import { BrandLogo } from '@/components/brand-logo';
 import type { Inventory, NodeRecord, OperatorRole } from '@/lib/fabric/types';
 import { cn } from '@/lib/utils';
 
@@ -125,7 +126,9 @@ export function ControllerDashboard({
   const initials = email.slice(0, 2).toUpperCase();
   const roleLabel = inventoryError
     ? 'Role unavailable'
-    : role === 'admin'
+    : role === 'superadmin'
+      ? 'Superadmin'
+      : role === 'admin'
       ? 'Administrator'
       : 'Viewer';
 
@@ -173,15 +176,9 @@ export function ControllerDashboard({
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <Link href="/dashboard" className="flex h-[84px] items-center gap-3 px-6">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-white">
-            <Network size={21} />
-          </div>
-          <div>
-            <span className="block text-base font-bold tracking-tight">SD-WAN</span>
-            <span className="block text-[10px] tracking-[.16em] text-muted-foreground">
-              CONTROLLER
-            </span>
+        <Link href="/dashboard" aria-label="SD-WAN CONTROLLER" className="flex h-[84px] items-center gap-3 px-6">
+          <div className="flex h-12 min-w-0 flex-1 items-center justify-center rounded-md bg-white px-1">
+            <BrandLogo compact />
           </div>
         </Link>
         <div className="mx-4 mb-7 flex items-center gap-3 rounded-lg border bg-[#fafbfc] px-3 py-3">
@@ -220,6 +217,15 @@ export function ControllerDashboard({
               )}
             </Link>
           ))}
+          {role === 'superadmin' && (
+            <Link
+              href="/diagnosticlogs"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Bug size={18} /> Diagnostics
+            </Link>
+          )}
         </nav>
         <div className="mt-auto px-3 pb-3">
           <div className="mx-1 mb-5 rounded-lg border bg-[#fafbfc] p-4">
@@ -567,7 +573,7 @@ export function ControllerDashboard({
               />
             </div>
           )}
-          {view === 'settings' && <ControllerSettings email={email} roleLabel={roleLabel} />}
+          {view === 'settings' && <ControllerSettings email={email} roleLabel={roleLabel} isSuperadmin={role === 'superadmin'} />}
           <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t pt-5 text-[10px] text-muted-foreground">
             <span>SD-WAN Controller · Operator workspace</span>
             <span className="flex items-center gap-1.5">

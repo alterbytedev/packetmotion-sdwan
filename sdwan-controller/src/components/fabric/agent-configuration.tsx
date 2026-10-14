@@ -112,7 +112,7 @@ export function AgentConfiguration({
               Current revision: {loading ? <span role="status">Loading…</span> : revision}. Agents
               securely retrieve configuration; no inbound connection to the device is needed.
             </p>
-            {role === 'admin' && (
+            {role !== 'viewer' && (
               <Button
                 type="button"
                 disabled={

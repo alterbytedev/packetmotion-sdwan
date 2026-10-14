@@ -14,18 +14,19 @@ import (
 )
 
 type State struct {
-	Checksum    string `json:"checksum"`
-	NodeID      string `json:"nodeId"`
-	Kind        string `json:"kind"`
-	Controller  string `json:"controller"`
-	AgentURL    string `json:"agentUrl"`
-	Key         string `json:"privateKey"`
-	Certificate string `json:"certificate"`
-	CA          string `json:"ca"`
-	ServerCA    string `json:"serverCa"`
-	ExpiresAt   string `json:"expiresAt"`
-	Revision    int    `json:"revision"`
-	AllowLocal  bool   `json:"allowLocal"`
+	PendingAcknowledgement bool   `json:"pendingAcknowledgement"`
+	Checksum               string `json:"checksum"`
+	NodeID                 string `json:"nodeId"`
+	Kind                   string `json:"kind"`
+	Controller             string `json:"controller"`
+	AgentURL               string `json:"agentUrl"`
+	Key                    string `json:"privateKey"`
+	Certificate            string `json:"certificate"`
+	CA                     string `json:"ca"`
+	ServerCA               string `json:"serverCa"`
+	ExpiresAt              string `json:"expiresAt"`
+	Revision               int    `json:"revision"`
+	AllowLocal             bool   `json:"allowLocal"`
 }
 
 func CreateKey() (string, error) {

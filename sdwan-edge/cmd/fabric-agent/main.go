@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"math/big"
-	"net/http"
 	"os"
 	"os/signal"
 	"packetmotion/fabric-agent/internal/agent"
@@ -77,6 +76,19 @@ func execute() error {
 		if err != nil {
 			return err
 		}
+		if !*once {
+			jitter, err := rand.Int(rand.Reader, big.NewInt(int64(5*time.Second)))
+			if err != nil {
+				return errors.New("startup jitter unavailable")
+			}
+			timer := time.NewTimer(time.Duration(jitter.Int64()))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil
+			case <-timer.C:
+			}
+		}
 		start := time.Now()
 		backoff := time.Second
 		var pending *agent.Telemetry
@@ -85,7 +97,13 @@ func execute() error {
 				snapshot := agent.Snapshot(start)
 				pending = &snapshot
 			}
-			interval, pollErr := agent.Poll(ctx, client, &state, *directory, *pending)
+			var renewalErr error
+			client, renewalErr = agent.Renew(ctx, client, &state, *directory)
+			interval, heartbeatErr, configErr := agent.Cycle(ctx, client, &state, *directory, *pending)
+			if heartbeatErr == nil {
+				pending = nil
+			}
+			pollErr := errors.Join(heartbeatErr, configErr, renewalErr)
 			if *once {
 				return pollErr
 			}
@@ -99,28 +117,6 @@ func execute() error {
 			} else {
 				pending = nil
 				backoff = time.Second
-				if expires, err := time.Parse(time.RFC3339, state.ExpiresAt); err == nil && time.Until(expires) < 7*24*time.Hour {
-					csr, err := identity.CSR(state.Key)
-					if err == nil {
-						var renewed struct {
-							Certificate string `json:"certificate"`
-							CA          string `json:"ca"`
-							ExpiresAt   string `json:"expiresAt"`
-						}
-						if err = client.Request(ctx, http.MethodPost, "/api/agent/v1/renew", map[string]string{"csr": csr}, &renewed); err == nil {
-							next := state
-							next.Certificate = renewed.Certificate
-							next.CA = renewed.CA
-							next.ExpiresAt = renewed.ExpiresAt
-							replacement, err := controller.New(next.AgentURL, next.ServerCA, next.Certificate, next.Key, next.AllowLocal)
-							if err == nil && identity.Save(*directory, next) == nil {
-								client.HTTP.CloseIdleConnections()
-								client = replacement
-								state = next
-							}
-						}
-					}
-				}
 			}
 			jitter, _ := rand.Int(rand.Reader, big.NewInt(int64(interval/5)+1))
 			delay := interval

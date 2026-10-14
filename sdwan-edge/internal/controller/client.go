@@ -58,7 +58,7 @@ func New(address, serverCA, cert, key string, allowLocal bool) (*Client, error) 
 		}
 		configuration.Certificates = []tls.Certificate{pair}
 	}
-	return &Client{URL: strings.TrimRight(address, "/"), HTTP: &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: configuration}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirects are not permitted") }}}, nil
+	return &Client{URL: strings.TrimRight(address, "/"), HTTP: &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: configuration, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, MaxConnsPerHost: 2, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 10 * time.Second}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirects are not permitted") }}}, nil
 }
 func (c *Client) Request(ctx context.Context, method, path string, input, output any) error {
 	var body io.Reader

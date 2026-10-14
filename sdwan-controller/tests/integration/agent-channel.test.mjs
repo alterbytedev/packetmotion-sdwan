@@ -48,6 +48,10 @@ test('token is hashed, expiring, one-use and binds signed certificate to registe
 
   const config=await channel.publishConfig(actor,node.id,{expectedRevision:0,pollIntervalSeconds:30});
   assert.equal((await channel.desiredConfig(node.id)).revision,1);
+  const unchanged=await channel.desiredConfig(node.id,'1',config.checksum);
+  assert.equal(unchanged.revision,1);assert.equal(unchanged.checksum,config.checksum);assert.equal(unchanged.unchanged,true);assert.equal(unchanged.payload,undefined);
+  assert.ok((await channel.desiredConfig(node.id,'1','wrong')).payload);
+  assert.ok((await channel.desiredConfig(node.id,'0',config.checksum)).payload);
   await channel.acknowledgeConfig(node.id,{revision:1,checksum:config.checksum,status:'received'});
   await channel.acknowledgeConfig(node.id,{revision:1,checksum:config.checksum,status:'received'});
   await assert.rejects(channel.acknowledgeConfig(node.id,{revision:1,checksum:config.checksum,status:'applied'}),/Invalid/);

@@ -24,7 +24,7 @@ flowchart LR
   API --> Persist[(PostgreSQL runtime_errors)]
   Capture --> Persist
   Persist --> CLI[npm run errors:show]
-  Persist --> Web[Read-only developer page]
+  Persist --> Web[Read-only superadmin page]
   API -. DB unavailable or migration absent .-> Stderr[Safe metadata to stderr; details not persisted]
   Capture -. DB unavailable .-> Stderr
 ```
@@ -51,10 +51,4 @@ The feature uses the existing Next.js instrumentation, controller API, PostgreSQ
 
 ## Web access
 
-The read-only web view is available at `/diagnosticlogs`. It uses a dedicated `developer` credential that is separate from operator dashboard accounts and device identities. After running `npm run migrate:controller`, create its credential with:
-
-```sh
-npm run init:developer
-```
-
-The CLI generates a random password and displays it once; PostgreSQL stores only its scrypt hash. Save the password in the team's approved secret manager. To rotate it, run `npm run reset:developer`; existing diagnostic sessions become invalid. A configured `CONTROLLER_SESSION_SECRET` is required for sessions, as with operator login. The diagnostic login is rate-limited and sets a separate HTTP-only session cookie. The page shows up to 100 latest reports. Each row's **Copy report** action copies the reference ID, first/last seen times in UTC, occurrence count, source, route/method, error name/code, message, and stack trace as plain text. This provides context for a developer or AI agent; review the report before sharing it because diagnostics may still contain sensitive application context. Stack details remain expandable per row. The diagnostic account has no dashboard, inventory, or mutation privileges.
+The read-only web view is available at `/diagnosticlogs` to superadmins from the dashboard Diagnostics menu item. Admins, viewers, and signed-out visitors are redirected to the dashboard or login page. Authorization reads the operator's current role from PostgreSQL on each page request, so role changes take effect without waiting for a session refresh. There is no separate diagnostic login or developer account. The page shows up to 100 latest reports. Each row's **Copy report** action copies the reference ID, first/last seen times in UTC, occurrence count, source, route/method, error name/code, message, and stack trace as plain text. This provides context for an operator or AI agent; review the report before sharing it because diagnostics may still contain sensitive application context. Stack details remain expandable per row. The page is read-only and exposes no log deletion or mutation operations.

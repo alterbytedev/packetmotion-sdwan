@@ -6,6 +6,118 @@
     "description": "Single-customer Next.js controller, operator inventory and outbound HTTPS/mTLS management agent MVP. Config received is not network applied."
   },
   "paths": {
+    "/api/branding/logo": {
+      "get": {
+        "operationId": "getBrandLogo",
+        "description": "Returns only the configured brand image. The asset is public so the login page can display it.",
+        "responses": {
+          "200": {
+            "description": "Logo image; response is not cached.",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No custom logo is configured."
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveBrandLogo",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Superadmin only. Requires an exact same-origin Origin header. Accepts PNG/JPEG/WebP up to 2 MiB.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Logo saved."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeBrandLogo",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Superadmin only. Requires an exact same-origin Origin header.",
+        "responses": {
+          "200": {
+            "description": "Logo removed; the default mark is displayed."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/api/operator/sites": {
       "get": {
         "operationId": "listSites",
@@ -400,14 +512,21 @@
             "deviceCertificate": []
           }
         ],
-        "description": "Identity/node scope comes from mTLS; no caller-selected node ID.",
+        "description": "Identity/node scope comes from mTLS; no caller-selected node ID. Optional revision and checksum return an unchanged marker only when both match; older clients continue receiving the complete payload.",
         "responses": {
           "200": {
             "description": "Accepted",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Desired"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Desired"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DesiredUnchanged"
+                    }
+                  ]
                 }
               }
             }
@@ -436,7 +555,27 @@
           "503": {
             "$ref": "#/components/responses/Error"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "checksum",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ]
       }
     },
     "/api/agent/v1/ack": {
@@ -1353,6 +1492,29 @@
               "received",
               "rejected"
             ]
+          }
+        }
+      },
+      "DesiredUnchanged": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "checksum",
+          "unchanged"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "checksum": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "unchanged": {
+            "type": "boolean",
+            "const": true
           }
         }
       }

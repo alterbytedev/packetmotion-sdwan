@@ -43,8 +43,8 @@ Update the README and [workspace status](../docs/STATUS.md) when implemented cap
 - Inspect a report from this directory with `npm run errors:show -- <reference-id>`. Diagnostic records contain bounded message/stack data and are sensitive; restrict access and review output before sharing it.
 - Error details cannot be persisted when PostgreSQL or the runtime-error migration is unavailable; only safe metadata is emitted to process stderr.
 - Update the controller README, workspace status, troubleshooting guide, and change log when capture behavior, retention, or operator workflow changes.
-- Keep `/diagnosticlogs` credentials separate from operator and agent identities. Use `npm run init:developer` once and `npm run reset:developer` to rotate the generated password; never grant this account dashboard or mutation access.
-- Diagnostic UI and queries must remain read-only. Keep its session HTTP-only, rate-limited, and invalidated by credential rotation.
+- `/diagnosticlogs` uses the operator session and is restricted to the current `superadmin` role. The dashboard menu must hide it from admin/viewer roles, and the page must enforce authorization independently. Do not maintain a separate diagnostic developer credential or login.
+- Diagnostic UI and queries must remain read-only. Restrict output because messages and stacks may contain sensitive application context.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

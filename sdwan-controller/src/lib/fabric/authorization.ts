@@ -24,8 +24,14 @@ export async function currentActor(): Promise<Actor | null> {
 
 export function authorize(actor: Actor | null, mutation = false): asserts actor is Actor {
   if (!actor) throw new FabricError(401, 'Sign in to access inventory.');
-  if (actor.role !== 'admin' && actor.role !== 'viewer')
+  if (actor.role !== 'superadmin' && actor.role !== 'admin' && actor.role !== 'viewer')
     throw new FabricError(403, 'Operator access denied.');
-  if (mutation && actor.role !== 'admin')
+  if (mutation && actor.role !== 'admin' && actor.role !== 'superadmin')
     throw new FabricError(403, 'Administrator access required.');
+}
+
+export function authorizeSuperadmin(actor: Actor | null): asserts actor is Actor {
+  if (!actor) throw new FabricError(401, 'Sign in to access branding settings.');
+  if (actor.role !== 'superadmin')
+    throw new FabricError(403, 'Superadmin access required.');
 }

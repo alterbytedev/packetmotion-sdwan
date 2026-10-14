@@ -1,4 +1,6 @@
-# Documentation index
+# Documentation source index
+
+Documentation has two audiences. Start at [AI agent guidance](agent/README.md) for repository workflow and implementation references, or [human documentation](human/README.md) for product, architecture, operations, status, and evidence material. The documents below remain the shared authoritative sources.
 
 - [PRD v1.1](prd/packetmotion-fabric-v1.1.md)
 - [Implementation plan](development/implementation-plan.md)

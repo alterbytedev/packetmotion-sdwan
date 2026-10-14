@@ -2,8 +2,9 @@ import { LogOut, Terminal } from 'lucide-react';
 import { logout } from '@/app/login/actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { BrandingSettings } from './branding-settings';
 
-export function ControllerSettings({ email, roleLabel }: { email: string; roleLabel: string }) {
+export function ControllerSettings({ email, roleLabel, isSuperadmin }: { email: string; roleLabel: string; isSuperadmin: boolean }) {
   return (
     <div className="grid gap-6 xl:grid-cols-2">
       <Card>
@@ -51,6 +52,7 @@ export function ControllerSettings({ email, roleLabel }: { email: string; roleLa
           </p>
         </CardContent>
       </Card>
+      {isSuperadmin && <div className="xl:col-span-2"><BrandingSettings /></div>}
     </div>
   );
 }

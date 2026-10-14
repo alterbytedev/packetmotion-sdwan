@@ -13,6 +13,18 @@ const load = loader({
   'next/navigation': {},
 });
 const inventory = load('src/lib/fabric/inventory.ts');
+let brandingActor = null;
+const branding = loader({
+  './db': { getDatabase: () => pool },
+  './fabric/authorization': {
+    currentActor: async () => brandingActor,
+    authorizeSuperadmin(actor) {
+      if (!actor) throw new Error('Sign in');
+      if (actor.role !== 'superadmin') throw new Error('Superadmin access required.');
+    },
+    FabricError: class FabricError extends Error {},
+  },
+})('src/lib/branding.ts');
 const operator = await pool.query('SELECT id::text, email, role FROM operators WHERE email = $1', [
   process.env.FABRIC_TEST_EMAIL,
 ]);
@@ -28,7 +40,7 @@ test('migration is repeatable, preserves credentials and detects modified applie
     before.rows,
   );
   const migrations = await pool.query('SELECT * FROM controller_migrations ORDER BY name');
-  assert.equal(migrations.rowCount, 4);
+  assert.equal(migrations.rowCount, 5);
   const original = migrations.rows[0].checksum;
   await pool.query(
     "UPDATE controller_migrations SET checksum = 'tampered' WHERE name = '0001_inventory_roles_audit.sql'",
@@ -41,6 +53,22 @@ test('migration is repeatable, preserves credentials and detects modified applie
       [original],
     );
   }
+});
+
+test('branding logo persists and only a superadmin can save or remove it', async () => {
+  brandingActor = { ...admin, role: 'superadmin' };
+  const png = Buffer.from('89504e470d0a1a0a', 'hex');
+  await branding.saveLogo(admin.id, 'image/png', png);
+  const stored = await branding.getLogo();
+  assert.equal(stored.logo_mime, 'image/png');
+  assert.deepEqual(stored.logo_data, png);
+  brandingActor = { ...brandingActor, role: 'admin' };
+  await assert.rejects(branding.saveLogo(admin.id, 'image/png', png), /Superadmin/);
+  await assert.rejects(branding.removeLogo(), /Superadmin/);
+  assert.deepEqual((await branding.getLogo()).logo_data, png);
+  brandingActor = { ...brandingActor, role: 'superadmin' };
+  await branding.removeLogo();
+  assert.equal(await branding.getLogo(), null);
 });
 
 test('inventory persists, is audited and is readable by viewer; viewer or missing site mutations fail', async () => {

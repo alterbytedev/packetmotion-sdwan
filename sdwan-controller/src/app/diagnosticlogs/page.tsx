@@ -1,9 +1,9 @@
-import { Activity, AlertTriangle, LogIn, LogOut, ShieldCheck } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft } from 'lucide-react';
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getDatabase } from '@/lib/db';
-import { developerSession } from '@/lib/diagnostic-auth';
-import { Feedback } from '@/components/ui/feedback';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { requireUser } from '@/lib/auth';
+import { currentActor } from '@/lib/fabric/authorization';
 import { CopyLogButton } from './copy-log-button';
 
 export const dynamic = 'force-dynamic';
@@ -27,34 +27,10 @@ function time(value: Date) {
   return new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' }).format(value);
 }
 
-export default async function DiagnosticLogsPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const params = await searchParams;
-  const authenticated = await developerSession();
-  if (!authenticated) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#fbfcfc] px-5 py-10">
-        <section className="w-full max-w-md rounded-xl border bg-white p-7 shadow-sm sm:p-9">
-          <div className="mb-6 flex size-12 items-center justify-center rounded-xl border bg-white shadow-sm">
-            <ShieldCheck size={22} className="text-primary" />
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight">Diagnostic logs</h1>
-          <p className="mb-7 mt-2 text-sm leading-6 text-muted-foreground">Sign in with developer access to review runtime error reports.</p>
-          <form action="/diagnosticlogs/login" method="post" className="space-y-5">
-            <div className="space-y-2">
-              <label htmlFor="diagnostic-username" className="text-sm font-medium">Username</label>
-              <Input id="diagnostic-username" name="username" autoComplete="username" required maxLength={64} />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="diagnostic-password" className="text-sm font-medium">Password</label>
-              <Input id="diagnostic-password" name="password" type="password" autoComplete="current-password" required maxLength={1024} />
-            </div>
-            {params.error === 'invalid' && <Feedback tone="error" presentation="panel">Invalid username or password, or developer access is not configured.</Feedback>}
-            <Button className="w-full" size="lg"><LogIn /> Open diagnostic logs</Button>
-          </form>
-        </section>
-      </main>
-    );
-  }
+export default async function DiagnosticLogsPage() {
+  await requireUser();
+  const actor = await currentActor();
+  if (actor?.role !== 'superadmin') redirect('/dashboard');
 
   const result = await getDatabase().query<DiagnosticRecord>(
     `SELECT reference_id,source,route_path,method,error_name,error_code,message,stack,
@@ -71,11 +47,9 @@ export default async function DiagnosticLogsPage({ searchParams }: { searchParam
             <h1 className="text-3xl font-semibold tracking-tight">Runtime error logs</h1>
             <p className="mt-2 text-sm text-muted-foreground">Showing the 100 most recently updated reports. Times are UTC.</p>
           </div>
-          <form action="/diagnosticlogs/logout" method="post">
-            <button className="inline-flex h-10 items-center gap-2 rounded-lg border bg-white px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" type="submit">
-              <LogOut size={16} /> Sign out
-            </button>
-          </form>
+          <Link href="/dashboard" className="inline-flex h-10 items-center gap-2 rounded-lg border bg-white px-4 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <ArrowLeft size={16} /> Back to dashboard
+          </Link>
         </header>
         {records.length === 0 ? (
           <div className="rounded-xl border bg-white p-10 text-center">

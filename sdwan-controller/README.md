@@ -1,5 +1,77 @@
 # SD-WAN Controller
 
+## npm commands
+
+Run these commands from `sdwan-controller/`. They are the complete set of scripts declared in `package.json`.
+
+### Run the controller
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the local Next.js development server on port 3000. |
+| `npm run build` | Build the production application. |
+| `npm run start` | Start the production build. Run `npm run build` first. |
+| `npm run lint` | Lint controller source with Biome. |
+| `npm run typecheck` | Generate Next.js route types and run TypeScript checks. |
+
+### Database, operator, and branding setup
+
+| Command | Purpose |
+| --- | --- |
+| `npm run migrate:auth` | Create or update authentication tables. Safe to rerun; does not change credentials. |
+| `npm run migrate:controller` | Apply checksum-verified controller migrations, including branding and diagnostics schema. Run before starting an upgraded deployment. |
+| `npm run setup:admin` | Alias for initial admin operator setup. |
+| `npm run init:admin` | Create the initial admin operator and session secret; generated password is printed once. |
+| `npm run init:admin --override` | Explicitly replace operator credentials, remove other operator rows, and rotate the session secret, ending existing sessions. |
+| `npm run set:operator-role -- <email> <role>` | Set an existing operator's role to `superadmin`, `admin`, or `viewer`. Use `superadmin` for white-label settings and diagnostics access. Keep at least one superadmin. |
+| `npm run init:device-ca` | Create the device certificate authority files used for agent enrollment. Keep the private key secure. |
+
+For example, from this directory, first apply controller migrations and then assign a role to an existing operator:
+
+```sh
+npm run migrate:controller
+npm run set:operator-role -- admin@example.com superadmin
+npm run set:operator-role -- admin@example.com admin
+npm run set:operator-role -- viewer@example.com viewer
+```
+
+Replace the example email addresses with existing operator emails. The final command makes that operator read-only; only `superadmin` can edit branding or view diagnostics.
+
+For the default development operator, use its `@localhost` email directly:
+
+```sh
+npm run set:operator-role -- admin@localhost superadmin
+```
+
+The default development operator address `admin@localhost` is supported too:
+
+```sh
+npm run set:operator-role -- admin@localhost superadmin
+```
+
+### Diagnostics access
+
+The read-only `/diagnosticlogs` page is available only to superadmins through the dashboard Diagnostics menu item. Admins, viewers, and signed-out visitors are redirected away; the page checks the current database role on every request. No separate diagnostic login or diagnostic user is used. Runtime error CLI access remains available to trusted host operators.
+
+| Command | Purpose |
+| --- | --- |
+| `npm run errors:show -- <reference-id>` | Read the stored runtime diagnostic for the supplied reference ID from the controller database. |
+
+Treat diagnostic output as sensitive operational data. See [Runtime error reports](#runtime-error-reports) and the [troubleshooting guide](../docs/operations/runtime-error-troubleshooting.md).
+
+### Tests and verification
+
+| Command | Purpose |
+| --- | --- |
+| `npm run test` | Run controller and repository-tooling unit/contract tests without a database. `npm test` is the equivalent npm shorthand. |
+| `npm run test:integration` | Run integration tests against an isolated temporary PostgreSQL database. |
+| `npm run test:browser` | Run browser journeys against an isolated database and server. |
+| `npm run test:baseline` | Capture current login and navigation screenshots. |
+| `npm run test:visual` | Compare protected browser regions with the screenshot baseline on the same OS/browser/font stack. |
+| `npm run test:agent` | Run isolated enrollment and management-channel checks; requires Docker, OpenSSL, and Go 1.27.2. |
+
+Integration and browser scripts use a dedicated test database account that can create databases; see [Isolated verification](#isolated-verification) for setup and cleanup behavior. `npm run test:agent` details and its scope are documented under [Go agent enrollment and management channel](#go-agent-enrollment-and-management-channel).
+
 ## Quick start
 
 ```sh
@@ -48,17 +120,7 @@ For an incident, copy the reference ID shown to the operator, then run the comma
 
 Runtime error records can include application context despite bounded redaction. Limit database and CLI access, and review diagnostic output before sharing it. Records older than 30 days are eligible for best-effort cleanup during error writes. If no errors are written, cleanup may not run until a later write. See the [runtime error troubleshooting guide](../docs/operations/runtime-error-troubleshooting.md) for deployment and diagnosis details.
 
-The read-only web log is available at `/diagnosticlogs` using a separate developer credential. Each report has a **Copy report** action that copies its reference ID, UTC timestamps, occurrence count, source, route/method, error name/code, message, and stack trace as plain text for an issue or AI-assisted troubleshooting. Review copied diagnostic data before sharing it because application context can be sensitive. After `npm run migrate:controller`, run `npm run init:developer` to generate the `developer` password; it is shown once and only its scrypt hash is stored. Use `npm run reset:developer` to generate a replacement and invalidate existing diagnostic sessions. Keep the password in an approved secret manager. This account cannot sign in to the operator dashboard or change controller data.
-
-```sh
-npm test
-npm run test:integration
-npm run test:browser
-npm run lint
-npm run typecheck
-npm run build
-npm start
-```
+The read-only web log is available at `/diagnosticlogs` to superadmins from the dashboard Diagnostics menu item. Admins, viewers, and signed-out visitors are redirected to the dashboard or login page, and the page rechecks the current role server-side. Each report has a **Copy report** action that copies its reference ID, UTC timestamps, occurrence count, source, route/method, error name/code, message, and stack trace as plain text for an issue or AI-assisted troubleshooting. Review copied diagnostic data before sharing it because application context can be sensitive. There is no separate diagnostic user or web credential. The legacy `diagnostic_developer` table from already-applied migration 0004 is unused and retained to honor migration immutability; no diagnostic login code reads it.
 
 Dependencies are pinned in package.json/package-lock.json. Linting uses Biome; type checking uses TypeScript. Node 22.12.0 or newer is required; `.nvmrc` records the local setup version.
 
@@ -87,7 +149,7 @@ Open Devices and select Add device. Enter a name, choose Edge (connects a local 
 
 `GET/POST /api/operator/sites` and `/api/operator/nodes` use the existing operator cookie. GET permits admin/viewer; POST requires admin, JSON and an exact same-origin Origin header. Node creation accepts either mode/lanPrefix for the one-step device flow or a legacy siteId, not both. The UI label Edge uses the existing branch wire/storage value. Bodies are limited to 8192 bytes. Set `CONTROLLER_PUBLIC_ORIGIN=https://your-controller.example` (no trailing slash) in production before enabling inventory mutations; development derives the origin from the request Host. Production mutations fail closed without this configuration. Protect the Next.js upstream from untrusted proxy access before the M2 device API is exposed.
 
-Roles reside in `operators.role`; existing accounts become admin. Account creation/role-management UI is deferred. A database administrator can assign an existing account with `UPDATE operators SET role = 'viewer' WHERE email = 'viewer@example.com';`. Maintain an admin account. Permission changes are read from PostgreSQL, not cached in the signed cookie. Credential override retains audit history with the actor email snapshot.
+Roles reside in `operators.role`; existing accounts remain admins after the additive superadmin migration. Only superadmins can edit the white-label logo in Settings. After `npm run migrate:controller`, assign a trusted existing operator with `npm run set:operator-role -- admin@example.com superadmin`. The same command can set `admin` or `viewer` to change roles. Keep at least one superadmin account. Permission changes are read from PostgreSQL, not cached in the signed cookie. The public logo endpoint exposes only the configured image; changes require a superadmin session and same-origin request.
 
 ## Isolated verification
 

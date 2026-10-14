@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CirclePlus, Search, Server } from 'lucide-react';
+import { CirclePlus, Search, Server, Router, Radio, RefreshCw, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Feedback } from '@/components/ui/feedback';
@@ -33,6 +33,10 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
     pageSize: 25,
   });
   const filtered = result.nodes;
+  const pageCount = Math.max(1, Math.ceil(result.total / result.pageSize));
+  const connected =
+    inventory.connected ??
+    inventory.nodes.filter((node) => node.connectionStatus === 'connected').length;
   useEffect(() => {
     const abort = new AbortController();
     setLoading(true);
@@ -114,31 +118,53 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
   return (
     <Card>
       <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CardTitle>
-            Device inventory{' '}
-            <Badge className="ml-2 align-middle">
-              {result.total} {result.total === 1 ? 'device' : 'devices'}
-            </Badge>
-          </CardTitle>
-          {role === 'admin' && (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                disabled={pending}
-                onClick={() => {
-                  setForm(form === 'node' ? null : 'node');
-                  setError('');
-                }}
-              >
-                <CirclePlus /> Add device
-              </Button>
-            </div>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1">
+            <CardTitle className="text-lg">Device inventory</CardTitle>
+            <CardDescription>Manage edge devices and hubs across your network.</CardDescription>
+          </div>
+          {role !== 'viewer' && (
+            <Button
+              size="sm"
+              disabled={pending}
+              onClick={() => {
+                setForm(form === 'node' ? null : 'node');
+                setError('');
+              }}
+            >
+              <CirclePlus /> Add device
+            </Button>
           )}
         </div>
-        <CardDescription>Your edge devices and hubs, in one place.</CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-lg border bg-background p-3">
+            <p className="text-xs text-muted-foreground">Total devices</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{result.total}</p>
+          </div>
+          <div className="rounded-lg border bg-background p-3">
+            <p className="text-xs text-muted-foreground">Controller connected</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{connected}</p>
+          </div>
+          <div className="rounded-lg border bg-background p-3">
+            <p className="text-xs text-muted-foreground">On this page</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{filtered.length}</p>
+          </div>
+          <div className="rounded-lg border bg-background p-3">
+            <p className="text-xs text-muted-foreground">Showing</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">
+              {filtered.length}
+              <span className="ml-1 text-sm font-normal text-muted-foreground">
+                of {result.total}
+              </span>
+            </p>
+          </div>
+        </div>
+        <p className="mb-4 rounded-md bg-muted/50 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          Connection reflects the controller management heartbeat. Tunnel and routing health are not
+          shown here.
+        </p>
         {enrollment && (
           <EnrollmentInstructions enrollment={enrollment} onClose={() => setEnrollment(null)} />
         )}
@@ -152,7 +178,7 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
             {error}
           </Feedback>
         )}
-        {role === 'admin' && form === 'node' && (
+        {role !== 'viewer' && form === 'node' && (
           <form
             onSubmit={(event) => submit(event)}
             className="mb-6 space-y-4 rounded-lg border bg-muted/30 p-4"
@@ -198,23 +224,50 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
             </div>
           </form>
         )}
-        <div className="relative mb-5 max-w-md">
-          <Search
-            aria-hidden="true"
-            size={16}
-            className="absolute left-3 top-3.5 text-muted-foreground"
-          />
-          <Input
-            className="pl-9"
-            aria-label="Search devices"
-            placeholder="Search devices…"
-            maxLength={100}
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setPage(1);
-            }}
-          />
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1 sm:max-w-md">
+            <Search
+              aria-hidden="true"
+              size={16}
+              className="absolute left-3 top-3.5 text-muted-foreground"
+            />
+            <Input
+              className="pl-9"
+              aria-label="Search devices"
+              placeholder="Search devices…"
+              maxLength={100}
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+            />
+            {search && (
+              <Button
+                type="button"
+                variant="unstyled"
+                size="icon-sm"
+                aria-label="Clear search"
+                className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setSearch('');
+                  setPage(1);
+                }}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full sm:w-auto"
+            disabled={loading}
+            onClick={() => setRefresh((value) => value + 1)}
+          >
+            <RefreshCw aria-hidden="true" className={loading ? 'animate-spin' : ''} />
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </Button>
         </div>
         <div className="overflow-x-auto" aria-busy={loading}>
           <table aria-label="Registered devices" className="w-full min-w-[520px] text-left text-sm">
@@ -238,27 +291,61 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
                 </tr>
               ) : filtered.length ? (
                 filtered.map((node) => (
-                  <tr key={node.id} className="border-b hover:bg-muted/30">
-                    <td className="px-4 py-4 font-medium">
-                      <Link
-                        className="hover:underline text-primary"
-                        href={`/dashboard/devices/${node.id}`}
-                      >
-                        {node.name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-4">{node.kind === 'hub' ? 'Hub' : 'Edge'}</td>
+                  <tr key={node.id} className="border-b transition-colors hover:bg-muted/30">
                     <td className="px-4 py-4">
-                      <Badge>{connectionStatusLabels[node.connectionStatus]}</Badge>
+                      <div className="flex min-w-40 items-center gap-3">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/40 text-primary">
+                          {node.kind === 'hub' ? (
+                            <Router size={17} aria-hidden="true" />
+                          ) : (
+                            <Radio size={17} aria-hidden="true" />
+                          )}
+                        </span>
+                        <span className="min-w-0">
+                          <Link
+                            className="block truncate font-medium text-foreground hover:text-primary"
+                            href={`/dashboard/devices/${node.id}`}
+                          >
+                            {node.name}
+                          </Link>
+                          {node.siteName !== node.name && (
+                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                              {node.siteName}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <Badge className="bg-muted/50 text-foreground">
+                        {node.kind === 'hub' ? 'Hub' : 'Edge device'}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-4">
+                      <Badge
+                        className={
+                          node.connectionStatus === 'connected'
+                            ? 'border-emerald-600/30 bg-emerald-600/10 text-emerald-800 dark:text-emerald-300'
+                            : node.connectionStatus === 'revoked'
+                              ? 'border-rose-600/30 bg-rose-600/10 text-rose-800 dark:text-rose-300'
+                              : ''
+                        }
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`size-1.5 rounded-full ${node.connectionStatus === 'connected' ? 'bg-emerald-600' : node.connectionStatus === 'revoked' ? 'bg-rose-600' : 'bg-current'}`}
+                        />
+                        {connectionStatusLabels[node.connectionStatus]}
+                      </Badge>
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex gap-2">
                         <Button asChild variant="ghost" size="sm">
                           <Link href={`/dashboard/devices/${node.id}`}>
-                            {role === 'admin' ? 'Configure' : 'View'}
+                            {role !== 'viewer' ? 'Configure' : 'View'}
                           </Link>
                         </Button>
-                        {role === 'admin' && node.connectionStatus === 'not-enrolled' && (
+                        {role !== 'viewer' && node.connectionStatus === 'not-enrolled' && (
                           <Button
                             type="button"
                             variant="ghost"
@@ -281,10 +368,17 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
                       {search ? `No devices match “${search}”` : 'No devices added'}
                     </p>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      {role === 'admin'
-                        ? 'Add an edge device or hub to get started.'
+                      {role !== 'viewer'
+                        ? search
+                          ? 'Try a different name or device type, or clear your search.'
+                          : 'Add your first edge device or hub to get started.'
                         : 'An administrator can add a device.'}
                     </p>
+                    {!search && role !== 'viewer' && (
+                      <Button size="sm" className="mt-4" onClick={() => setForm('node')}>
+                        <CirclePlus aria-hidden="true" /> Add device
+                      </Button>
+                    )}
                   </td>
                 </tr>
               )}
@@ -312,19 +406,7 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
               ))}
             </Select>
           </div>
-          <span>
-            Page {result.page} of {Math.max(1, Math.ceil(result.total / result.pageSize))} ·{' '}
-            {result.total} devices
-          </span>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loading}
-              onClick={() => setRefresh((value) => value + 1)}
-            >
-              Refresh devices
-            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -342,6 +424,9 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
               Next
             </Button>
           </div>
+          <span className="w-full text-center sm:w-auto sm:text-right">
+            Page {result.page} of {pageCount} · {result.total} devices
+          </span>
         </div>
       </CardContent>
     </Card>

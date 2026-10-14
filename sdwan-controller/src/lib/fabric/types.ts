@@ -1,4 +1,4 @@
-export type OperatorRole = 'admin' | 'viewer';
+export type OperatorRole = 'superadmin' | 'admin' | 'viewer';
 export type Actor = { id: string; email: string; role: OperatorRole };
 export type Site = {
   id: string;

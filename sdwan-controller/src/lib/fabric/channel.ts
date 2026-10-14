@@ -13,11 +13,13 @@ export type DeviceConfig = {
   lanPrefix: string | null;
   pollIntervalSeconds: number;
 };
-export async function desiredConfig(nodeId: string) {
+export async function desiredConfig(nodeId: string, knownRevision?: string | null, knownChecksum?: string | null) {
   const existing = await getDatabase().query(
     'SELECT revision,payload,checksum FROM desired_configs WHERE node_id=$1 ORDER BY revision DESC LIMIT 1',
     [nodeId],
   );
+  if (existing.rowCount && String(existing.rows[0].revision) === knownRevision && existing.rows[0].checksum === knownChecksum)
+    return { revision: existing.rows[0].revision, checksum: existing.rows[0].checksum, unchanged: true };
   if (existing.rowCount)
     return {
       revision: existing.rows[0].revision,

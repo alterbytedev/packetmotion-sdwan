@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 export function GET(request: Request) {
   return agentRequest(request, false, async (device) => {
     if (!device) throw new FabricError(401, 'Device required.');
-    return desiredConfig(device.id);
+    const query = new URL(request.url).searchParams;
+    return desiredConfig(device.id, query.get('revision'), query.get('checksum'));
   });
 }

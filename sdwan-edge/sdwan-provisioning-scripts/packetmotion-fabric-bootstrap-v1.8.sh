@@ -356,7 +356,7 @@ run 'Install routing, tunnel and diagnostic packages' apt-get -o Dpkg::Progress-
   dnsutils traceroute tcpdump ethtool jq vim nano git chrony wireguard \
   wireguard-tools nftables frr frr-pythontools kmod conntrack iperf3 \
   mtr-tiny iputils-arping lsof logrotate procps psmisc netcat-openbsd \
-  openssl htop iftop nload strace pciutils tshark dhcpcd-base
+  openssl htop iftop nload strace pciutils tshark dhcpcd-base python3
 
 step 'Enable FRR routing daemons'
 
@@ -762,6 +762,297 @@ table_end
 
 run 'Save final FRR configuration (write memory)' vtysh -c 'write memory'
 
+# Stage only after all FRR/helper writes so migrated references stay consistent.
+step 'Stage automatic MAC-sorted ethN interface names'
+install -d -m 755 /usr/local/libexec
+INTERFACE_HELPER=/usr/local/libexec/packetmotion-interface-names
+if [[ -L "$INTERFACE_HELPER" ]] || { [[ -e "$INTERFACE_HELPER" ]] && ! grep -Fq 'Boot-only, MAC-sorted Ethernet naming.' "$INTERFACE_HELPER"; }; then
+  printf '  Existing interface helper is not owned by PacketMotion; refusing overwrite.\n' >&3
+  exit 1
+fi
+[[ ! -e "$INTERFACE_HELPER" ]] || cp -a "$INTERFACE_HELPER" "${INTERFACE_HELPER}.bak.$(date +%Y%m%d%H%M%S)"
+INTERFACE_HELPER_TMP=$(mktemp /usr/local/libexec/.packetmotion-interface-names.XXXXXX)
+cat > "$INTERFACE_HELPER_TMP" <<'PM_INTERFACE_HELPER'
+#!/usr/bin/python3
+"""Boot-only, MAC-sorted Ethernet naming. No controller/agent privileges."""
+import argparse
+import hashlib
+import fnmatch
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+STATE = 'var/lib/packetmotion-interface-names'
+HELPER = '/usr/local/libexec/packetmotion-interface-names'
+SERVICE = 'etc/systemd/system/packetmotion-interface-names.service'
+MANAGERS = ('networking', 'systemd-networkd', 'NetworkManager', 'dhcpcd', 'frr',
+            'packetmotion-network-init', 'packetmotion-dhcp')
+MARKER = '# Managed by PacketMotion interface naming'
+
+
+def atomic(path, content, mode=0o600):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(content)
+            stream.flush()
+            os.fchmod(stream.fileno(), mode)
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        parent = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(parent)
+        finally:
+            os.close(parent)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def scan(root):
+    found = []
+    for interface in sorted((root / 'sys/class/net').iterdir()):
+        if not (interface / 'device').exists() or (interface / 'wireless').exists():
+            continue
+        if (interface / 'type').read_text().strip() != '1':
+            continue
+        if (interface / 'addr_assign_type').read_text().strip() != '0':
+            raise ValueError(f'{interface.name}: MAC is not permanent; refusing unstable mapping')
+        mac = (interface / 'address').read_text().strip().lower()
+        if not re.fullmatch(r'(?:[0-9a-f]{2}:){5}[0-9a-f]{2}', mac) or int(mac[:2], 16) & 1 or mac == '00:00:00:00:00:00':
+            raise ValueError(f'{interface.name}: invalid unicast MAC')
+        if not re.fullmatch(r'[a-zA-Z0-9_-]{1,15}', interface.name):
+            raise ValueError('Unsupported physical interface name')
+        found.append({'current': interface.name, 'mac': mac})
+    found.sort(key=lambda entry: entry['mac'])
+    if not found or len({entry['mac'] for entry in found}) != len(found):
+        raise ValueError('No physical Ethernet interfaces, or duplicate MAC addresses')
+    for index, entry in enumerate(found):
+        entry['target'] = f'eth{index}'
+    return found
+
+
+def configs(root):
+    patterns = ('etc/network/interfaces', 'etc/network/interfaces.d/*',
+                'etc/systemd/network/*.network', 'etc/systemd/network/*.netdev',
+                'etc/NetworkManager/system-connections/*', 'etc/netplan/*.yaml',
+                'etc/netplan/*.yml', 'etc/dhcpcd.conf', 'etc/default/networking',
+                'etc/frr/*.conf', 'etc/nftables.conf', 'etc/nftables.d/*',
+                'etc/wireguard/*.conf', 'usr/local/sbin/packetmotion-network-init',
+                'usr/local/sbin/packetmotion-dhcp')
+    return sorted({path for pattern in patterns for path in root.glob(pattern) if path.is_file()})
+
+
+def rewrite(text, mapping):
+    changes = {entry['current']: entry['target'] for entry in mapping if entry['current'] != entry['target']}
+    if not changes:
+        return text
+    # Simultaneous replacement supports eth0/eth1 swaps and VLAN/alias suffixes.
+    pattern = r'(?<![a-zA-Z0-9_-])(' + '|'.join(re.escape(name) for name in sorted(changes, key=len, reverse=True)) + r')(?![a-zA-Z0-9_-])'
+    return re.sub(pattern, lambda match: changes[match[1]], text)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def restore(root, record, require_unchanged=True):
+    entries = record['files']
+    if require_unchanged:
+        for entry in entries:
+            path = root / entry['path']
+            actual = digest(path.read_bytes()) if path.is_file() else None
+            acceptable = {entry['after']}
+            if record['status'] == 'staging':
+                acceptable.add(entry['before'])
+            if actual not in acceptable:
+                raise ValueError(f"Changed since staging: {entry['path']}; restore manually from backup")
+    for entry in reversed(entries):
+        path = root / entry['path']
+        if entry['backup'] is None:
+            path.unlink(missing_ok=True)
+        else:
+            shutil.copy2(root / entry['backup'], path)
+            os.chown(path, entry['uid'], entry['gid'])
+
+
+def stage(root):
+    mapping = scan(root)
+    cmdline = root / 'proc/cmdline'
+    if cmdline.exists() and re.search(r'(?:^|\s)(?:ip=|root=/dev/nfs|rd.neednet=1)', cmdline.read_text()):
+        raise ValueError('Early-boot networking requires a dedicated naming migration; refusing staging')
+    state = root / STATE
+    record_path = state / 'transaction.json'
+    if state.is_symlink() or (state.exists() and state.stat().st_mode & 0o077):
+        raise ValueError('Naming state directory must be private and not a symlink')
+    if record_path.exists():
+        record = json.loads(record_path.read_text())
+        if record['status'] != 'staged':
+            raise ValueError('Incomplete transaction; rollback from console before restaging')
+        expected = [(item['mac'], item['target']) for item in record['mapping']]
+        if expected != [(item['mac'], item['target']) for item in mapping]:
+            raise ValueError('Hardware mapping changed; rollback/review existing mapping before staging again')
+        for entry in record['files']:
+            path = root / entry['path']
+            if not path.is_file() or digest(path.read_bytes()) != entry['after']:
+                raise ValueError(f"Configuration changed since staging: {entry['path']}; review before restaging")
+        print('Existing MAC mapping retained; no configuration rewritten.')
+        return
+    # Custom naming rules and unmanaged configs need a deliberate operator migration.
+    for pattern in ('etc/systemd/network/*.link', 'etc/udev/rules.d/*net*.rules'):
+        for path in root.glob(pattern):
+            if path.is_file() and re.search(r'(^\s*Name\s*=|NAME\s*[:+]?=)', path.read_text(), re.M):
+                raise ValueError(f'Competing naming rule: {path.relative_to(root)}')
+    for pattern in ('etc/network/interfaces', 'etc/network/interfaces.d/*'):
+        for path in root.glob(pattern):
+            if path.is_file() and re.search(r'^\s*source(?:-directory)?\s+(?!/etc/network/interfaces.d(?:/|\s|$))', path.read_text(), re.M):
+                raise ValueError('External ifupdown includes require manual migration')
+    planned = {}
+    for path in configs(root):
+        if path.is_symlink():
+            raise ValueError(f'Symlink configuration requires manual migration: {path.relative_to(root)}')
+        text = path.read_text()
+        for entry in mapping:
+            if entry['current'] != entry['target'] and any(('*' in token or '?' in token) and fnmatch.fnmatchcase(entry['current'], token) for token in re.findall(r'[a-zA-Z0-9_./?*:-]+', text)):
+                raise ValueError(f'Wildcard interface selector requires manual migration: {path.relative_to(root)}')
+        updated = rewrite(text, mapping)
+        if updated != text:
+            planned[path] = (updated.encode(), path.stat().st_mode & 0o777)
+    service = f'''{MARKER}
+[Unit]
+Description=PacketMotion MAC-sorted Ethernet names
+DefaultDependencies=no
+Wants=systemd-udev-settle.service
+After=local-fs.target systemd-udev-settle.service
+Before=sysinit.target network-pre.target {' '.join(name + '.service' for name in MANAGERS)}
+[Service]
+Type=oneshot
+ExecStart={HELPER} boot
+RemainAfterExit=yes
+[Install]
+WantedBy=sysinit.target
+'''
+    planned[root / SERVICE] = (service.encode(), 0o644)
+    for manager in MANAGERS:
+        dropin = root / f'etc/systemd/system/{manager}.service.d/10-packetmotion-interface-names.conf'
+        planned[dropin] = ((MARKER + '\n[Unit]\nRequires=packetmotion-interface-names.service\nAfter=packetmotion-interface-names.service\n').encode(), 0o644)
+    for path in planned:
+        if (path == root / SERVICE or path.name == '10-packetmotion-interface-names.conf') and path.exists():
+            raise ValueError(f'Refusing to overwrite existing service configuration: {path.relative_to(root)}')
+    state.mkdir(parents=True, exist_ok=True, mode=0o700)
+    backup = state / ('backup-' + str(time.time_ns()))
+    backup.mkdir(mode=0o700)
+    record = {'mapping': mapping, 'files': [], 'status': 'staging'}
+    try:
+        for index, (path, (data, mode)) in enumerate(planned.items()):
+            previous = None
+            uid, gid = os.getuid(), os.getgid()
+            if path.exists():
+                info = path.stat()
+                uid, gid = info.st_uid, info.st_gid
+                previous = backup / str(index)
+                shutil.copy2(path, previous)
+            record['files'].append({'path': str(path.relative_to(root)), 'backup': str(previous.relative_to(root)) if previous else None, 'uid': uid, 'gid': gid, 'before': digest(path.read_bytes()) if path.exists() else None, 'after': digest(data)})
+            atomic(record_path, json.dumps(record, indent=2).encode())
+            atomic(path, data, mode)
+            os.chown(path, uid, gid)
+        record['status'] = 'staged'
+        atomic(record_path, json.dumps(record, indent=2).encode())
+    except BaseException:
+        restore(root, record, require_unchanged=False)
+        record_path.unlink(missing_ok=True)
+        raise
+    print('Staged interface mapping (active names change only at next boot):')
+    for entry in mapping:
+        print(f"  {entry['current']}  {entry['mac']}  -> {entry['target']}")
+    print(f'Private recovery backup: /{backup.relative_to(root)}')
+
+
+def boot(root):
+    record = json.loads((root / STATE / 'transaction.json').read_text())
+    if record['status'] != 'staged':
+        raise ValueError('Incomplete naming transaction; use rollback from console')
+    current = scan(root)
+    by_mac = {entry['mac']: entry['current'] for entry in current}
+    expected = {entry['mac'] for entry in record['mapping']}
+    if set(by_mac) != expected:
+        raise ValueError('Hardware differs from staged mapping; refusing partial renaming')
+    links = json.loads(subprocess.check_output(['ip', '-j', 'link', 'show']))
+    names = {link['ifname'] for link in links}
+    flags = {link['ifname']: link['flags'] for link in links}
+    changes = [(by_mac[entry['mac']], entry['target']) for entry in record['mapping'] if by_mac[entry['mac']] != entry['target']]
+    physical = set(by_mac.values())
+    if any(target in names - physical for _, target in changes):
+        raise ValueError('ethN target is occupied by a nonphysical interface')
+    if any('UP' in flags[name] for name, _ in changes):
+        raise ValueError('Refusing live interface renaming; run at boot before network services')
+    temporary = [f'pmnic{index}' for index in range(len(changes))]
+    if any(name in names for name in temporary):
+        raise ValueError('Temporary rename names are already occupied')
+    # Free every source name before assigning any ethN name (handles swaps).
+    moves = []
+    try:
+        for (old, _), temp in zip(changes, temporary):
+            subprocess.run(['ip', 'link', 'set', 'dev', old, 'name', temp], check=True)
+            moves.append((old, temp))
+        for (_, target), temp in zip(changes, temporary):
+            subprocess.run(['ip', 'link', 'set', 'dev', temp, 'name', target], check=True)
+            moves.append((temp, target))
+    except BaseException:
+        for old, new in reversed(moves):
+            subprocess.run(['ip', 'link', 'set', 'dev', new, 'name', old], check=True)
+        raise
+    print('MAC-sorted Ethernet names verified; network services may start.')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=('scan', 'stage', 'boot', 'rollback'))
+    parser.add_argument('--root', default='/')
+    args = parser.parse_args()
+    root = Path(args.root).resolve()
+    if args.action == 'boot' and root != Path('/'):
+        raise ValueError('Boot mode requires the real root filesystem')
+    if args.action == 'scan':
+        print(json.dumps(scan(root), indent=2))
+    elif args.action == 'stage':
+        stage(root)
+    elif args.action == 'boot':
+        boot(root)
+    else:
+        path = root / STATE / 'transaction.json'
+        record = json.loads(path.read_text())
+        restore(root, record)
+        path.unlink()
+        enabled = root / 'etc/systemd/system/sysinit.target.wants/packetmotion-interface-names.service'
+        if enabled.is_symlink() and enabled.resolve() == (root / SERVICE).resolve():
+            enabled.unlink()
+        print('Configuration restored. Reload systemd and reboot from console; no live renaming performed.')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, subprocess.SubprocessError) as error:
+        print(f'Interface naming stopped: {error}', file=sys.stderr)
+        sys.exit(1)
+PM_INTERFACE_HELPER
+chmod 700 "$INTERFACE_HELPER_TMP"
+mv -f "$INTERFACE_HELPER_TMP" "$INTERFACE_HELPER"
+printf '  Physical Ethernet ports will be sorted by MAC: lowest MAC -> eth0.\n  Staging migrates known network/FRR/helper references; live names stay unchanged.\n  Console access is required for first reboot and recovery.\n' >&3
+run 'Stage MAC mapping and configuration references' "$INTERFACE_HELPER" stage
+run 'Reload interface naming service' systemctl daemon-reload
+run 'Enable boot-only Ethernet naming' systemctl enable packetmotion-interface-names.service
+status WARN 'Ethernet names' 'staged; reboot unverified'
+printf '  Pending names activate next boot. Verify: ip -br link\n  Recovery: %s rollback && systemctl daemon-reload && reboot\n' "$INTERFACE_HELPER" >&3
+
 heading 'INSTALLATION SUMMARY'
 
 printf '  %-18s %s\n' 'OS' "Debian $VERSION_ID" 'Hostname' "$(hostname)" 'FRR version' "$(dpkg-query -W -f='${Version}' frr)" 'Kernel' "$(uname -r)" 'Log' "$LOG" >&3
@@ -791,7 +1082,7 @@ fi
 
 printf '\n  A reboot is recommended to ensure the new Linux hostname is reflected by all services.\n' >&3
 while :; do
-  network_prompt 'Reboot now? (1=Yes, 2=No; e.g. 2 to reboot later)' 1
+  network_prompt 'Reboot now? (1=Yes, 2=No; console access required)' 2
   case "$REPLY" in
     1) run 'Reboot system' systemctl reboot; break;;
     2) printf '  Reboot skipped. Reboot later with: systemctl reboot\n' >&3; break;;

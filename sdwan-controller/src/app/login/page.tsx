@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { sessionSecret, getUser } from '@/lib/auth';
 import { LoginForm } from '@/components/login-form';
+import { BrandLogo } from '@/components/brand-logo';
 
 export default async function LoginPage() {
   if (await getUser()) redirect('/dashboard');
@@ -17,12 +18,9 @@ export default async function LoginPage() {
     <main className="grid min-h-screen lg:grid-cols-[1.08fr_1fr]">
       <section className="grid-surface relative hidden overflow-hidden bg-[#112f2b] p-12 text-white lg:flex lg:flex-col xl:p-16">
         <div className="flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-white/15 bg-white/10">
-            <Network size={23} />
+          <div className="flex h-14 max-w-[260px] items-center justify-center rounded-lg bg-white px-3">
+            <BrandLogo />
           </div>
-          <span className="text-lg font-semibold tracking-tight">
-            SD-WAN<span className="ml-2 font-normal text-white/50">Controller</span>
-          </span>
         </div>
         <div className="relative z-10 my-auto py-12">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/5 px-3 py-1.5 text-xs text-emerald-200">
@@ -63,9 +61,6 @@ export default async function LoginPage() {
         </div>
       </section>
       <section className="flex min-h-screen flex-col bg-[#fbfcfc] px-6 py-8 sm:px-12">
-        <div className="flex items-center gap-2 font-semibold text-primary lg:hidden">
-          <Network size={24} /> SD-WAN Controller
-        </div>
         <div className="my-auto w-full max-w-[380px] self-center py-12">
           <div className="mb-7 flex size-12 items-center justify-center rounded-xl border bg-white shadow-sm">
             <LockKeyhole size={22} className="text-primary" />

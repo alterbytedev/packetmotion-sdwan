@@ -12,8 +12,11 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"packetmotion/fabric-agent/internal/controller"
 	"packetmotion/fabric-agent/internal/identity"
+	"path/filepath"
 	"runtime"
 	"time"
 )
@@ -29,9 +32,10 @@ type Enrolled struct {
 	AgentURL    string `json:"agentUrl"`
 }
 type Desired struct {
-	Revision int             `json:"revision"`
-	Payload  json.RawMessage `json:"payload"`
-	Checksum string          `json:"checksum"`
+	Unchanged bool            `json:"unchanged"`
+	Revision  int             `json:"revision"`
+	Payload   json.RawMessage `json:"payload"`
+	Checksum  string          `json:"checksum"`
 }
 type Config struct {
 	SchemaVersion       int     `json:"schemaVersion"`
@@ -129,16 +133,43 @@ func Snapshot(start time.Time) Telemetry {
 	}
 	return snapshot
 }
+
+// Poll runs both management operations even when one fails.
 func Poll(ctx context.Context, client *controller.Client, state *identity.State, directory string, snapshot Telemetry) (time.Duration, error) {
-	if err := client.Request(ctx, http.MethodPost, "/api/agent/v1/heartbeat", snapshot, nil); err != nil {
-		return 0, err
-	}
+	interval, heartbeatErr, configErr := Cycle(ctx, client, state, directory, snapshot)
+	return interval, errors.Join(heartbeatErr, configErr)
+}
+
+func Cycle(ctx context.Context, client *controller.Client, state *identity.State, directory string, snapshot Telemetry) (time.Duration, error, error) {
+	heartbeatErr := client.Request(ctx, http.MethodPost, "/api/agent/v1/heartbeat", snapshot, nil)
+	interval, configErr := Reconcile(ctx, client, state, directory)
+	return interval, heartbeatErr, configErr
+}
+
+func Reconcile(ctx context.Context, client *controller.Client, state *identity.State, directory string) (time.Duration, error) {
 	var desired Desired
-	if err := client.Request(ctx, http.MethodGet, "/api/agent/v1/desired", nil, &desired); err != nil {
+	path := "/api/agent/v1/desired"
+	var cached []byte
+	if state.Revision > 0 {
+		cached, _ = os.ReadFile(filepath.Join(directory, "desired.json"))
+		sum := sha256.Sum256(cached)
+		if len(cached) > 0 && hex.EncodeToString(sum[:]) == state.Checksum {
+			path += "?revision=" + fmt.Sprint(state.Revision) + "&checksum=" + url.QueryEscape(state.Checksum)
+		} else {
+			cached = nil
+		}
+	}
+	if err := client.Request(ctx, http.MethodGet, path, nil, &desired); err != nil {
 		return 0, err
 	}
 	if desired.Revision == 0 {
 		return 30 * time.Second, nil
+	}
+	if desired.Unchanged {
+		if cached == nil || desired.Revision != state.Revision || desired.Checksum != state.Checksum {
+			return 0, errors.New("invalid unchanged revision")
+		}
+		desired.Payload = cached
 	}
 	sum := sha256.Sum256(desired.Payload)
 	if desired.Revision < state.Revision || (desired.Revision == state.Revision && state.Checksum != "" && desired.Checksum != state.Checksum) || desired.Checksum != hex.EncodeToString(sum[:]) {
@@ -148,27 +179,82 @@ func Poll(ctx context.Context, client *controller.Client, state *identity.State,
 	decoder := json.NewDecoder(bytes.NewReader(desired.Payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {
-		return 0, errors.New("invalid desired config")
+		return reject(ctx, client, desired, "invalid desired config")
 	}
 	if config.SchemaVersion != 1 || config.DeviceKind != state.Kind || (config.Mode != "gateway" && config.Mode != "subnet-router") || config.PollIntervalSeconds < 10 || config.PollIntervalSeconds > 300 {
-		return 0, errors.New("unsupported desired config")
+		return reject(ctx, client, desired, "unsupported desired config")
 	}
 	if config.LANPrefix != nil {
 		if _, network, err := net.ParseCIDR(*config.LANPrefix); err != nil || network.IP.To4() == nil {
-			return 0, errors.New("invalid LAN prefix")
+			return reject(ctx, client, desired, "invalid LAN prefix")
 		}
 	}
 	// Management MVP stages durable configuration only; it does not apply networking.
-	if err := identity.WritePrivate(directory, "desired.json", desired.Payload); err != nil {
-		return 0, err
+	if cached == nil || desired.Revision != state.Revision || desired.Checksum != state.Checksum {
+		if err := identity.WritePrivate(directory, "desired.json", desired.Payload); err != nil {
+			return 0, err
+		}
+		next := *state
+		next.Revision, next.Checksum, next.PendingAcknowledgement = desired.Revision, desired.Checksum, true
+		if err := identity.Save(directory, next); err != nil {
+			return 0, err
+		}
+		*state = next
 	}
-	state.Revision = desired.Revision
-	state.Checksum = desired.Checksum
-	if err := identity.Save(directory, *state); err != nil {
-		return 0, err
-	}
-	if err := client.Request(ctx, http.MethodPost, "/api/agent/v1/ack", map[string]any{"revision": desired.Revision, "checksum": desired.Checksum, "status": "received"}, nil); err != nil {
-		return 0, err
+	if state.PendingAcknowledgement {
+		if err := client.Request(ctx, http.MethodPost, "/api/agent/v1/ack", map[string]any{"revision": desired.Revision, "checksum": desired.Checksum, "status": "received"}, nil); err != nil {
+			return 0, err
+		}
+		next := *state
+		next.PendingAcknowledgement = false
+		if err := identity.Save(directory, next); err != nil {
+			return 0, err
+		}
+		*state = next
 	}
 	return time.Duration(config.PollIntervalSeconds) * time.Second, nil
+}
+
+func reject(ctx context.Context, client *controller.Client, desired Desired, reason string) (time.Duration, error) {
+	err := client.Request(ctx, http.MethodPost, "/api/agent/v1/ack", map[string]any{"revision": desired.Revision, "checksum": desired.Checksum, "status": "rejected"}, nil)
+	return 0, errors.Join(errors.New(reason), err)
+}
+
+// Renew is independent of configuration and heartbeat success. Persist before switching clients.
+func Renew(ctx context.Context, client *controller.Client, state *identity.State, directory string) (*controller.Client, error) {
+	expires, err := time.Parse(time.RFC3339, state.ExpiresAt)
+	if err != nil {
+		return client, errors.New("invalid certificate expiry")
+	}
+	if time.Until(expires) >= 7*24*time.Hour {
+		return client, nil
+	}
+	csr, err := identity.CSR(state.Key)
+	if err != nil {
+		return client, err
+	}
+	var renewed struct {
+		Certificate string `json:"certificate"`
+		CA          string `json:"ca"`
+		ExpiresAt   string `json:"expiresAt"`
+	}
+	if err = client.Request(ctx, http.MethodPost, "/api/agent/v1/renew", map[string]string{"csr": csr}, &renewed); err != nil {
+		return client, err
+	}
+	next := *state
+	next.Certificate, next.CA, next.ExpiresAt = renewed.Certificate, renewed.CA, renewed.ExpiresAt
+	if expiry, parseErr := time.Parse(time.RFC3339, next.ExpiresAt); parseErr != nil || !expiry.After(expires) {
+		return client, errors.New("invalid renewed expiry")
+	}
+	replacement, err := controller.New(next.AgentURL, next.ServerCA, next.Certificate, next.Key, next.AllowLocal)
+	if err != nil {
+		return client, err
+	}
+	if err = identity.Save(directory, next); err != nil {
+		replacement.HTTP.CloseIdleConnections()
+		return client, err
+	}
+	client.HTTP.CloseIdleConnections()
+	*state = next
+	return replacement, nil
 }

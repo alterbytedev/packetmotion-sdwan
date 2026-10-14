@@ -4,7 +4,7 @@ import loader from './support/load-ts.cjs';
 
 const load = loader({ 'next/headers': {}, 'next/navigation': {} });
 const { siteInput, nodeInput } = load('src/lib/fabric/validation.ts');
-const { authorize } = load('src/lib/fabric/authorization.ts');
+const { authorize, authorizeSuperadmin } = load('src/lib/fabric/authorization.ts');
 const admin = { id: '1', email: 'admin@example.test', role: 'admin' };
 
 test('authorization rejects anonymous, viewer writes and unknown roles', () => {
@@ -13,6 +13,15 @@ test('authorization rejects anonymous, viewer writes and unknown roles', () => {
   authorize({ ...admin, role: 'viewer' });
   assert.throws(() => authorize({ ...admin, role: 'viewer' }, true), /Administrator/);
   assert.throws(() => authorize({ ...admin, role: 'owner' }), /denied/);
+});
+
+test('branding authorization is restricted to superadmins while superadmins retain admin access', () => {
+  const superadmin = { ...admin, role: 'superadmin' };
+  authorize(superadmin, true);
+  authorizeSuperadmin(superadmin);
+  assert.throws(() => authorizeSuperadmin(admin), /Superadmin/);
+  assert.throws(() => authorizeSuperadmin({ ...admin, role: 'viewer' }), /Superadmin/);
+  assert.throws(() => authorizeSuperadmin(null), /Sign in/);
 });
 
 test('site validation rejects malformed, noncanonical and special-use IPv4 prefixes', () => {
