@@ -51,4 +51,4 @@ Deploy the controller before the updated agent. Legacy clients receive full resp
 
 See [management communication operations](../docs/operations/management-channel.md) for latency, recovery and capacity limits.
 
-For the separate Debian package/host bootstrap and automatic MAC-sorted `ethN` naming, see the [provisioning guide](sdwan-provisioning-scripts/README.md). This installer changes host networking; it is separate from agent management reconciliation.
+For the separate Debian package/host bootstrap, see the [provisioning guide](sdwan-provisioning-scripts/README.md). The bootstrap preserves Debian/kernel interface names and configures the selected uplink; it is separate from agent management reconciliation.

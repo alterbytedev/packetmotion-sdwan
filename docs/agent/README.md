@@ -18,7 +18,7 @@ Use this index to find the repository's working rules and implementation referen
 - [Controller UI component conventions](../development/ui-component-architecture.md)
 - [Architecture and security index](../README.md)
 - [Current delivery status](../STATUS.md)
-- [Debian bootstrap and MAC-sorted Ethernet naming](../../sdwan-edge/sdwan-provisioning-scripts/README.md)
+- [Debian bootstrap and interface-name-preserving networking](../../sdwan-edge/sdwan-provisioning-scripts/README.md)
 - [Management communication and recovery](../operations/management-channel.md)
 - [Runtime error capture and troubleshooting](../operations/runtime-error-troubleshooting.md)
 - [API contract](../../api/openapi.yaml)
