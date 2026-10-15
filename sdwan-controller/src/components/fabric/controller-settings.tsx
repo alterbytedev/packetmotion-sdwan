@@ -3,8 +3,20 @@ import { logout } from '@/app/login/actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { BrandingSettings } from './branding-settings';
+import { OperatorManager } from './operator-manager';
+import type { OperatorRole } from '@/lib/fabric/types';
 
-export function ControllerSettings({ email, roleLabel, isSuperadmin }: { email: string; roleLabel: string; isSuperadmin: boolean }) {
+export function ControllerSettings({
+  email,
+  roleLabel,
+  role,
+  isSuperadmin,
+}: {
+  email: string;
+  roleLabel: string;
+  role: OperatorRole;
+  isSuperadmin: boolean;
+}) {
   return (
     <div className="grid gap-6 xl:grid-cols-2">
       <Card>
@@ -48,10 +60,12 @@ export function ControllerSettings({ email, roleLabel, isSuperadmin }: { email: 
             </p>
           </div>
           <p className="mt-4 text-xs leading-6 text-muted-foreground">
-            Additional operators, tenant management, and account editing are not available yet.
+            Superadmins can create admin and viewer accounts; admins can create viewer accounts;
+            viewers cannot manage accounts. Account editing and password reset are not available yet.
           </p>
         </CardContent>
       </Card>
+      {role !== 'viewer' && <div className="xl:col-span-2"><OperatorManager role={role} /></div>}
       {isSuperadmin && <div className="xl:col-span-2"><BrandingSettings /></div>}
     </div>
   );

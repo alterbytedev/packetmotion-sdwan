@@ -588,3 +588,103 @@
 - Risks/limits: Existing installations where the previous v1.8 already staged renaming retain their installed helper/service and rewritten config; this repository script change does not automatically roll back a previously staged transaction on an appliance. New runs no longer create it. Check an affected host's `/var/lib/packetmotion-interface-names/transaction.json`, service/drop-ins, and configs before manual recovery. DHCP may fail for unrelated host/network configuration causes.
 - Rollback: Revert task-owned changes to the bootstrap, provisioning docs/index wording, and regression test. Do not rerun a pre-change script without console recovery planning.
 - Next: Run the focused Node test in a Node-enabled checkout; on an isolated Debian 12/13 VM verify selected `ens*`/`enp*` name persists over reboot, DHCP lease/default route and service logs, and console recovery.
+
+## NODE-RUNTIME-001 — 2026-10-14 — Codex /root
+
+- Status: COMPLETE; runtime alignment and dependency installation PASS.
+- Summary/reason: Installed official Node.js v22.12.0 under `/opt/node-v22.12.0-linux-x64` and linked `node`, `npm`, and `npx` through `/usr/local/bin` so the repository's existing `.nvmrc` and `engines.node >=22.12.0` requirements are met by the host shell. `npm install` had emitted EBADENGINE under the prior Node v20.19.2 runtime.
+- Files: No tracked application/configuration files changed; this change-log entry records the host environment change. Existing unrelated `mynotes.txt` edit preserved.
+- Checks actually run: `node --version` -> v22.12.0; `npm --version` -> 10.9.0; `npm install` PASS, up to date, audited 97 packages, 0 vulnerabilities, no EBADENGINE warning. No application tests run because no application code changed.
+- UI/network impact: None; host JavaScript runtime/toolchain only.
+- Risks/limitations: Node is installed system-wide for this host under `/opt`, with `/usr/local/bin` links; other users/shells must have `/usr/local/bin` before `/usr/bin` in PATH. Rollback by removing the three `/usr/local/bin` links and `/opt/node-v22.12.0-linux-x64`; existing `/usr/bin/node` remains untouched.
+- Next: Run project commands from this checkout with Node 22.12.0 or newer.
+
+## TAILWIND-NATIVE-BINDING-001 — 2026-10-15 — Codex /root
+
+- Status: RESOLVED for this local checkout; production build PASS.
+- Summary/reason: Restored the missing platform-specific Tailwind CSS Oxide native optional dependency (`@tailwindcss/oxide-linux-x64-gnu@4.2.1`) in local `node_modules`. The committed package manifest and lockfile already declare the correct optional package/version; no source or dependency manifest changes were needed.
+- Files: This change log only; local ignored `sdwan-controller/node_modules` updated. Existing `mynotes.txt` and prior change-log edits were preserved.
+- Checks actually run: Verified the installed native package reports version 4.2.1; `cd sdwan-controller && npm run build` PASS (Next.js 16.4.0, compilation, TypeScript and page generation).
+- UI/network impact: None; no application code, UI, schema or networking behavior changed.
+- Risks/limits: Repair applies to this checkout and can be lost if dependencies are reinstalled while optional packages are omitted or filtered. Rollback: remove the local `sdwan-controller/node_modules/@tailwindcss/oxide-linux-x64-gnu` directory; rerun `npm ci` with optional dependencies enabled to restore the reproducible install.
+- Next: If this repeats after reinstall, check npm install flags/config (`omit=optional`, `--no-optional`, platform filtering) and reinstall using the committed lockfile.
+
+## TAILWIND-NATIVE-BINDING-002 — 2026-10-15 — Codex /root
+
+- Status: CURRENT CHECKOUT VERIFIED; reported dev-server error not reproducible.
+- Summary/reason: Investigated the reported missing @tailwindcss/oxide-linux-x64-gnu native optional dependency. It is currently installed under local ignored node_modules, and direct Node loading returns the Oxide Scanner; the Next.js production build succeeds. Earlier log entry TAILWIND-NATIVE-BINDING-001 records restoration in this checkout, so this report likely came from a stale dev process or a subsequent dependency state that is no longer present. No dependency manifests, lockfiles, application code, or user changes were modified.
+- Files: This change log only; existing edits to sdwan-controller/package-lock.json and mynotes.txt were preserved.
+- Checks actually run: node --version -> v22.12.0; runtime platform -> linux x64, glibc 2.41; npm config get omit -> null; npm config get optional -> null; npm ls @tailwindcss/oxide @tailwindcss/oxide-linux-x64-gnu --depth=1 shows oxide@4.2.1; direct require(@tailwindcss/oxide-linux-x64-gnu) PASS; npm run build PASS (Next.js 16.4.0 compilation, TypeScript, static generation).
+- UI/network impact: None; no source or UI changes.
+- Risks/limits: Build verifies the current production build path, not the specific already-running Turbopack dev process in the report. Rollback: no code rollback required; if needed, stop the dev server and restart it, preserving node_modules and lockfiles.
+- Next: Stop the current npm run dev process and start it again. If the error returns, inspect the exact shell’s Node platform/architecture, npm config get omit, npm ls @tailwindcss/oxide-linux-x64-gnu, and whether the .node file exists; install with npm install --include=optional --no-save without deleting the lockfile or node_modules.
+
+## ALLOWED-DEV-ORIGIN-001 — 2026-10-15 — Codex /root
+
+- Status: IMPLEMENTED; focused static checks PASS.
+- Summary/reason: Added Next.js allowedDevOrigins for the reported remote development client hostname 100.83.173.93. The setting applies to dev-only resources; did not add a global wildcard. The cross-origin warning concerned /__nextjs_original-stack-frames and does not independently explain the separate GET / 500.
+- Files: sdwan-controller/next.config.ts; this log. Existing package-lock.json and mynotes.txt edits were preserved.
+- Checks actually run: npm run typecheck PASS (next typegen and tsc); npx biome lint next.config.ts PASS; git diff --check -- sdwan-controller/next.config.ts PASS. Did not run/restart the dev server; runtime behavior remains unverified until restart.
+- UI/network impact: No product UI or forwarding behavior changes. Development server now permits requests to dev-only endpoints from hostname 100.83.173.93.
+- Risks/limits: This explicitly trusts that development hostname; dev server must restart to load config. Production behavior is unaffected by Next.js dev-only origin handling. Rollback: remove allowedDevOrigins entry from next.config.ts.
+- Next: Restart npm run dev. If GET / remains 500, capture the corresponding server-side exception; the origin warning and page 500 may be separate issues.
+
+## TAILWIND-DEV-RESTART-003 — 2026-10-15 — Codex /root
+
+- Status: LOCAL DEVELOPMENT SERVER RECOVERED; NetBird path UNVERIFIED.
+- Summary/reason: Confirmed the reported failure on the active Next.js 16.4.0 Turbopack server: GET / returned HTTP 500 while its CSS build referenced a missing Tailwind Oxide binding. The binding package and .node binary are present and load successfully from sdwan-controller. Stopped and restarted only the controller dev process; without deleting node_modules or changing dependency files, GET / now returns HTTP 307 to the login page, and the new dev log contains no Oxide binding error.
+- Files: This change log only. Existing edits to sdwan-controller/next.config.ts, sdwan-controller/package-lock.json, mynotes.txt, and this log were preserved.
+- Checks actually run: From sdwan-controller: Node v22.12.0; direct native package resolution/load PASS; npm ls confirms @tailwindcss/oxide 4.2.1; active-server curl before restart HTTP 500; after restart curl localhost HTTP 307; new Next dev log inspected. Direct curl to http://100.83.173.93:3000 timed out from this host, so the external NetBird path is UNVERIFIED. git diff --check on owned log change PASS; workspace-wide diff check reports an existing trailing blank line in mynotes.txt, left unchanged.
+- UI/network impact: No application source, UI, schema, dependency or forwarding behavior changed. Controller dev server restarted and listens on 0.0.0.0:3000.
+- Risks/limits: Restart cleared the observed stale/failing Turbopack process state but does not establish why it lost access to an already-installed binding or prove that another reinstall will behave the same. Login redirect confirms the root route renders, not database-backed login success. NetBird connectivity from a remote client remains unverified.
+- Rollback: No tracked application rollback required. If dev errors recur, inspect the serving process and native package resolution from sdwan-controller, then restart that process; preserve package-lock.json and node_modules.
+- Next: Reload http://100.83.173.93:3000/ in the NetBird client. If it still fails, compare the browser's exact URL/error with current server output; verify the server host's NetBird address and port 3000 reachability.
+
+## CONTROLLER-FIRST-RUN-DOCS-001 — 2026-10-15 — Codex /root
+
+- Status: COMPLETE (documentation only).
+- Summary/reason: Rewrote the controller Quick Start as an ordered first local run: prerequisites and database creation, dependency install, `.env.local` configuration, auth/controller migrations, one-time initial operator creation, long-running dev server, and first login. Added later-run guidance, remote host binding note, and recovery for a missing `login_attempts` table. Clarified that migrations create tables inside an existing database, not PostgreSQL or the database itself.
+- Files: `sdwan-controller/README.md`; this log. Existing edits to `mynotes.txt`, `sdwan-controller/next.config.ts`, and `sdwan-controller/package-lock.json` were preserved.
+- Checks actually run: Manually reviewed the rendered Markdown section and command order; `git diff --check -- sdwan-controller/README.md` PASS. No application tests run because behavior did not change.
+- UI/network impact: None; documentation only. The README documents binding to `0.0.0.0` for a trusted remote development client and the port 3000 firewall requirement.
+- Risks/rollback: Documentation could still need tailoring for PostgreSQL installation differences across operating systems. Rollback by reverting only this README section; retain the append-only log.
+- Next: Follow the steps on a fresh development database and refine OS-specific PostgreSQL setup if needed.
+
+## CONTROLLER-FIRST-RUN-POSITION-002 — 2026-10-15 — Codex /root
+
+- Status: COMPLETE (documentation only).
+- Summary/reason: Moved the first local run Quick Start to directly below the controller README title so setup steps are the first content readers see.
+- Files: `sdwan-controller/README.md`; this log.
+- Checks actually run: Reviewed the README opening and command placement; `git diff --check -- sdwan-controller/README.md docs/change-logs/log_change_001.md` PASS.
+- UI/network impact: None; documentation ordering only.
+- Risks/rollback: None identified. Roll back by moving the section to its prior location.
+- Next: Follow the quick start on a clean development database when setting up a new environment.
+## OPERATOR-HIERARCHY-001 — 2026-10-15 — Codex /root
+
+- Status: IMPLEMENTED; type, lint, unit/contract, integration and production build checks PASS. Browser verification UNVERIFIED because Playwright Chromium is not installed in this environment.
+- Summary/reason: Aligned first-run setup and account provisioning with the requested hierarchy. `npm run init:superadmin` creates the first superadmin. Settings lets superadmins add admins or viewers and admins add viewers (users); the server API enforces these limits and returns a generated password once. Existing admin command remains for compatibility. README quick start, OpenAPI contract, login setup guidance and delivery status now describe the flow.
+- Files: `sdwan-controller/package.json`; `sdwan-controller/scripts/setup-admin.mjs`; `sdwan-controller/src/app/login/actions.ts`; `sdwan-controller/src/app/api/operator/operators/route.ts` (new); `sdwan-controller/src/lib/fabric/operator-management.ts` (new); `sdwan-controller/src/components/controller-dashboard.tsx`; `sdwan-controller/src/components/fabric/controller-settings.tsx`; `sdwan-controller/src/components/fabric/operator-manager.tsx` (new); `sdwan-controller/src/components/login-form.tsx`; `sdwan-controller/tests/api-contract.test.mjs`; `sdwan-controller/tests/integration/operator-management.test.mjs` (new); `sdwan-controller/tests/browser/operator-management.spec.ts` (new); `sdwan-controller/README.md`; `api/openapi.yaml`; `docs/STATUS.md`; this log. Pre-existing edits in `mynotes.txt`, `sdwan-controller/next.config.ts`, and `sdwan-controller/package-lock.json` were preserved.
+- Checks actually run: `npm run typecheck` PASS; `npm run lint` PASS; `npm test` PASS (29 tests); `npm run test:integration` PASS (17 tests, isolated DB removed); `npm run build` PASS (includes `/api/operator/operators`). `npm run test:browser -- --grep 'operator management follows'` attempted and could not launch either desktop/mobile Chromium because the Playwright executable is not installed; isolated test DB was removed. `git diff --check` PASS for task-owned files.
+- UI/network impact: Additive account management appears in existing Settings for superadmin/admin; existing visual system reused. No networking, forwarding, inventory schema or database migration changes.
+- Risks/limits: Generated passwords are displayed once but accounts are not forced to change them at first login. Existing deployments keep current roles; promote a trusted existing account with `npm run set:operator-role -- <email> superadmin`. Desktop/mobile browser journey remains UNVERIFIED. `init:superadmin --override` removes all operator rows and rotates the session secret; README marks it as destructive.
+- Rollback: Revert the task-owned account UI/API/setup/documentation changes; existing operator rows and credentials remain intact unless an operator explicitly runs the documented `--override` command. No database migration rollback is needed.
+- Next: Install the pinned Playwright browser in a verification environment and run the focused desktop/mobile operator-management browser journey; promote an existing trusted operator where upgrading an existing database.
+## SUPERADMIN-EMAIL-001 — 2026-10-15 — Codex /root
+
+- Status: COMPLETE.
+- Summary/reason: Set the first-run superadmin default and examples to `admin@admin.local`, matching the requested local email-style address. Updated the already-created local superadmin record from `admin@localhost` to `admin@admin.local`; preserved its role and password. Updated only comments/default guidance in ignored `.env.local`; no secrets were recorded.
+- Files: `sdwan-controller/scripts/setup-admin.mjs`; `sdwan-controller/.env.example`; `sdwan-controller/README.md`; ignored local `sdwan-controller/.env.local`; this log. Existing unrelated edits were preserved.
+- Checks actually run: Pre-change DB lookup found one `admin@localhost` superadmin and no target collision. Transactional PostgreSQL update PASS; returned role remained `superadmin`. Confirmed source/example/README no longer use `admin@localhost` for the default; `git diff --check` PASS for tracked task files. No application tests run; this was a default/account email update.
+- UI/network impact: No UI, auth algorithm or network behavior changed. The account now signs in as `admin@admin.local`; the email change invalidated sessions using the previous email.
+- Risks/rollback: Use the same existing password with the new email. Roll back by changing the operator email back to `admin@localhost` and restoring the bootstrap/docs defaults if requested. `.env.local` remains private and ignored.
+- Next: Sign in with `admin@admin.local`; choose an actual mailbox address when creating additional accounts if email delivery is configured externally.
+
+## REMOTE-DASHBOARD-INTERACTIONS-001 — 2026-10-15 — Codex /root
+
+- Status: IMPLEMENTED; lint, typecheck, and focused remote-origin asset check PASS.
+- Summary/reason: Remote browser hostname `100.83.173.93` was not the same as the dev server bind address `0.0.0.0`. Next.js blocks cross-origin dev-only assets/endpoints unless their browser hostname is listed, which can leave the page visible without working client navigation. Replaced the bind-address entry with an explicit `NEXT_ALLOWED_DEV_ORIGINS` hostname list, defaulting to the known remote hostname, and documented how to set it for other remote hostnames.
+- Files: `sdwan-controller/next.config.ts`; `sdwan-controller/README.md`; this log.
+- Checks actually run: `npm run lint -- next.config.ts` PASS (Biome checked 83 files); `npm run typecheck` PASS; `git diff --check -- sdwan-controller/next.config.ts sdwan-controller/README.md` PASS. Restarted the existing dev server. Local `/` returns 307 to login as expected. Requested an actual Next dev chunk while simulating cross-site no-cors loading from `http://100.83.173.93:3000`; response 200. Browser click journey from a separate remote client remains unverified.
+- UI/network impact: Restores remote dev client assets/interactions for the listed hostname; no production UI, authentication, or network-forwarding behavior changed.
+- Risks/limits: Other client hostnames must be added in `.env.local` as comma-separated hostnames without scheme or port, then restart Next dev. Do not use a wildcard unless the dev environment requires it. Rollback: restore the prior `allowedDevOrigins` config and README sentence.
+- Next: Reload the remote dashboard. If its browser-visible hostname differs from `100.83.173.93`, set `NEXT_ALLOWED_DEV_ORIGINS` to that hostname and restart the dev server.

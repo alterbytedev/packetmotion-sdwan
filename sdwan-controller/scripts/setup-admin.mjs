@@ -8,6 +8,7 @@ const override =
   process.argv.includes('--override') ||
   process.env.npm_config_override === 'true' ||
   process.env.npm_config_overide === 'true';
+const initialRole = process.argv[2] === 'superadmin' ? 'superadmin' : 'admin';
 const envPath = '.env.local';
 let contents = '';
 try {
@@ -31,7 +32,7 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const email = (process.env.CONTROLLER_ADMIN_EMAIL || readEnv('CONTROLLER_ADMIN_EMAIL') || 'admin@localhost')
+const email = (process.env.CONTROLLER_ADMIN_EMAIL || readEnv('CONTROLLER_ADMIN_EMAIL') || 'admin@admin.local')
   .trim()
   .toLowerCase();
 if (!/^[^\s@]+@(?:localhost|[^\s@]+\.[^\s@]+)$/.test(email)) {
@@ -61,7 +62,7 @@ try {
 
   const existing = await pool.query('SELECT email FROM operators ORDER BY id LIMIT 1');
   if (existing.rowCount && !override) {
-    console.error('An operator already exists. Use npm run init:admin --override to replace the admin credentials.');
+    console.error(`An operator already exists. Use npm run init:${initialRole} --override only if you intend to replace all operator credentials.`);
     process.exitCode = 1;
   } else {
     const password = randomBytes(18).toString('base64url');
@@ -73,8 +74,8 @@ try {
         await pool.query('DELETE FROM operators');
       }
       await pool.query(
-        'INSERT INTO operators (email, password_hash) VALUES ($1, $2)',
-        [email, passwordHash],
+        'INSERT INTO operators (email, password_hash, role) VALUES ($1, $2, $3)',
+        [email, passwordHash, initialRole],
       );
       await pool.query('COMMIT');
     } catch (error) {
@@ -90,7 +91,7 @@ try {
     const updated = `${retained}${retained ? '\n\n' : ''}CONTROLLER_SESSION_SECRET=${JSON.stringify(secret)}\n`;
     writeFileSync(envPath, updated, { mode: 0o600 });
     chmodSync(envPath, 0o600);
-    console.log(`Operator ${existing.rowCount ? 'updated' : 'created'}. Email: ${email}\nPassword: ${password}\nSave this password; only its scrypt hash is stored in PostgreSQL.`);
+    console.log(`${initialRole} operator ${existing.rowCount ? 'updated' : 'created'}. Email: ${email}\nPassword: ${password}\nSave this password; only its scrypt hash is stored in PostgreSQL.`);
   }
 } finally {
   await pool.end();

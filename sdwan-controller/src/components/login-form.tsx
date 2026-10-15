@@ -58,7 +58,7 @@ export function LoginForm({ configured }: { configured: boolean }) {
       </div>
       {!configured && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Set up operator access with <code>npm run init:admin</code> on the controller.
+          Set up operator access with <code>npm run init:superadmin</code> on the controller.
         </p>
       )}
       {state.error && (

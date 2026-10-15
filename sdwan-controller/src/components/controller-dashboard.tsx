@@ -573,7 +573,7 @@ export function ControllerDashboard({
               />
             </div>
           )}
-          {view === 'settings' && <ControllerSettings email={email} roleLabel={roleLabel} isSuperadmin={role === 'superadmin'} />}
+          {view === 'settings' && <ControllerSettings email={email} roleLabel={roleLabel} role={role} isSuperadmin={role === 'superadmin'} />}
           <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t pt-5 text-[10px] text-muted-foreground">
             <span>SD-WAN Controller · Operator workspace</span>
             <span className="flex items-center gap-1.5">

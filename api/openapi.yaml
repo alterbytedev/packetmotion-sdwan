@@ -118,6 +118,21 @@
         }
       }
     },
+    "/api/operator/operators": {
+      "get": {
+        "operationId": "listOperators",
+        "security": [{"operatorSession": []}],
+        "description": "Admin and superadmin only. Lists operator email addresses, roles, and creation dates.",
+        "responses": {"200": {"description": "Operator accounts."}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}
+      },
+      "post": {
+        "operationId": "createOperator",
+        "security": [{"operatorSession": []}],
+        "description": "Requires exact same-origin Origin. Superadmins may create admins or viewers; admins may create viewers only. Returns a generated password once.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["email"], "properties": {"email": {"type": "string", "format": "email", "maxLength": 254}, "role": {"type": "string", "enum": ["admin", "viewer"]}}}}}},
+        "responses": {"201": {"description": "Operator created; includes the generated password exactly once."}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "409": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}
+      }
+    },
     "/api/operator/sites": {
       "get": {
         "operationId": "listSites",

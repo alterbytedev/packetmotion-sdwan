@@ -14,7 +14,7 @@ export async function login(_state: LoginState, form: FormData): Promise<LoginSt
   const secret = sessionSecret();
   if (!secret)
     return {
-      error: 'Operator access is not configured. Run npm run init:admin on the controller.',
+      error: 'Operator access is not configured. Run npm run init:superadmin on the controller.',
     };
   const email = String(form.get('email') ?? '')
     .trim()

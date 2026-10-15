@@ -1,5 +1,52 @@
 # SD-WAN Controller
 
+## Quick start: first local run
+
+Use this sequence for a fresh local development setup. Keep this terminal in `sdwan-controller/` unless a step says otherwise.
+
+1. **Install prerequisites.** Install Node.js 22.12.0 or newer and PostgreSQL. Start PostgreSQL and create an empty development database named `sdwan_controller` (or choose another database name). The PostgreSQL role in the connection URL needs permission to create tables in that database.
+2. **Install the project dependencies.** From the repository root:
+
+   ```sh
+   cd sdwan-controller
+   npm ci
+   ```
+
+3. **Configure the database connection.** Create the private local environment file, then edit its `DATABASE_URL` to match your PostgreSQL username, password, host, port, and database name:
+
+   ```sh
+   cp .env.example .env.local
+   ```
+
+   For a local PostgreSQL instance with the example database and role, the URL is `postgresql://postgres:YOUR_PASSWORD@localhost:5432/sdwan_controller`. Do not commit or share `.env.local`.
+4. **Create the authentication tables.** This step creates `operators` and `login_attempts`; it does not create a PostgreSQL server or database:
+
+   ```sh
+   npm run migrate:auth
+   ```
+
+5. **Create/update the controller tables.** This applies the versioned inventory, device, diagnostics, and branding migrations:
+
+   ```sh
+   npm run migrate:controller
+   ```
+
+6. **Create the first superadmin.** Run this once for an empty operator database. Save the generated password shown in the terminal; it is printed only once. The default email is `admin@admin.local`:
+
+   ```sh
+   npm run init:superadmin
+   ```
+
+7. **Start the development server.** Keep this terminal running:
+
+   ```sh
+   npm run dev
+   ```
+
+8. **Sign in.** Open [http://localhost:3000/login](http://localhost:3000/login) and enter the email and generated password. To use the server from another machine on a trusted network, start it with `npm run dev -- --hostname 0.0.0.0` and open `http://SERVER_ADDRESS:3000/login`; ensure the host firewall/network permits port 3000. Set `NEXT_ALLOWED_DEV_ORIGINS` in `.env.local` to the browser-visible hostname (or comma-separated hostnames), without scheme or port, and restart the dev server. The default allows this workspace's remote hostname `100.83.173.93`; `0.0.0.0` is only the server bind address, not the browser hostname.
+
+For later runs, start PostgreSQL, then run `npm run dev`; do not repeat `init:superadmin`. On an existing installation whose first account is still an admin, promote that account once with `npm run set:operator-role -- admin@admin.local superadmin`; do not use `--override` for promotion. If login reports `relation "login_attempts" does not exist`, stop the dev server, confirm `.env.local` points to the intended database, run `npm run migrate:auth`, then start the dev server again. After signing in, open **Settings → Operator accounts**: superadmins can add admins or users (viewer access), and admins can add users (viewer access).
+
 ## npm commands
 
 Run these commands from `sdwan-controller/`. They are the complete set of scripts declared in `package.json`.
@@ -19,10 +66,12 @@ Run these commands from `sdwan-controller/`. They are the complete set of script
 | Command | Purpose |
 | --- | --- |
 | `npm run migrate:auth` | Create or update authentication tables. Safe to rerun; does not change credentials. |
+| `npm run setup:superadmin` | Alias for creating the initial superadmin. |
+| `npm run setup:admin` | Legacy alias for initial admin setup. |
 | `npm run migrate:controller` | Apply checksum-verified controller migrations, including branding and diagnostics schema. Run before starting an upgraded deployment. |
-| `npm run setup:admin` | Alias for initial admin operator setup. |
-| `npm run init:admin` | Create the initial admin operator and session secret; generated password is printed once. |
-| `npm run init:admin --override` | Explicitly replace operator credentials, remove other operator rows, and rotate the session secret, ending existing sessions. |
+| `npm run init:superadmin` | Create the initial superadmin operator and session secret; generated password is printed once. Use for new installations. |
+| `npm run init:superadmin --override` | Destructively replace all operator credentials, recreate the superadmin, and rotate the session secret, ending existing sessions. |
+| `npm run init:admin` | Legacy initial-admin setup command; prefer `init:superadmin` for new installations. |
 | `npm run set:operator-role -- <email> <role>` | Set an existing operator's role to `superadmin`, `admin`, or `viewer`. Use `superadmin` for white-label settings and diagnostics access. Keep at least one superadmin. |
 | `npm run init:device-ca` | Create the device certificate authority files used for agent enrollment. Keep the private key secure. |
 
@@ -40,13 +89,13 @@ Replace the example email addresses with existing operator emails. The final com
 For the default development operator, use its `@localhost` email directly:
 
 ```sh
-npm run set:operator-role -- admin@localhost superadmin
+npm run set:operator-role -- admin@admin.local superadmin
 ```
 
-The default development operator address `admin@localhost` is supported too:
+The default development operator address `admin@admin.local` is supported too:
 
 ```sh
-npm run set:operator-role -- admin@localhost superadmin
+npm run set:operator-role -- admin@admin.local superadmin
 ```
 
 ### Diagnostics access
@@ -72,27 +121,8 @@ Treat diagnostic output as sensitive operational data. See [Runtime error report
 
 Integration and browser scripts use a dedicated test database account that can create databases; see [Isolated verification](#isolated-verification) for setup and cleanup behavior. `npm run test:agent` details and its scope are documented under [Go agent enrollment and management channel](#go-agent-enrollment-and-management-channel).
 
-## Quick start
 
-```sh
-npm ci
-cp .env.example .env.local
-# Edit .env.local and set DATABASE_URL for your local PostgreSQL database.
-npm run migrate:auth
-npm run migrate:controller
-npm run init:admin
-npm run dev
-```
-
-Open [http://localhost:3000/login](http://localhost:3000/login). The init command prints the admin email and a generated password once; save the password. The default email is `admin@localhost`.
-
-If an admin already exists, init preserves it. To replace the admin credentials, run:
-
-```sh
-npm run init:admin --override
-```
-
-Override removes other operator rows and rotates the session secret, ending existing sessions. Keep `.env.local` private and never commit it.
+If an operator already exists, `npm run init:superadmin` intentionally exits without changing credentials. To deliberately replace all credentials, run `npm run init:superadmin --override`. This deletes all operator rows, creates a new superadmin, and rotates the session secret, ending existing sessions. Keep `.env.local` private and never commit it.
 
 ## Project overview
 
@@ -102,9 +132,9 @@ The controller includes an operator login and protected dashboard with `/dashboa
 
 ## Operator access details
 
-`npm run migrate:auth` creates or updates the authentication tables and is a required setup step for new and upgraded installations. It is safe to rerun and does not create, replace, or change operator credentials. Run it followed by `npm run migrate:controller` after deploying controller updates and before starting the application. Controller migrations are additive, checksum-verified, and serialized by a PostgreSQL lock. Existing operators receive the admin role without credential changes. `npm run init:admin` creates the first operator and writes `CONTROLLER_SESSION_SECRET` to `.env.local`; it is only for initial credential setup. To choose another initial email, set `CONTROLLER_ADMIN_EMAIL` in `.env.local` or the process environment before running init. Password hashes are stored in PostgreSQL using scrypt; plaintext passwords are only printed once during setup. To replace operator credentials, explicitly run `npm run init:admin --override`.
+`npm run migrate:auth` creates or updates the authentication tables and is a required setup step for new and upgraded installations. It is safe to rerun and does not create, replace, or change operator credentials. Run it followed by `npm run migrate:controller` after deploying controller updates and before starting the application. Controller migrations are additive, checksum-verified, and serialized by a PostgreSQL lock. Existing operators receive the admin role without credential changes. `npm run init:superadmin` creates the first superadmin and writes `CONTROLLER_SESSION_SECRET` to `.env.local`; it is only for initial credential setup. To choose another initial email, set `CONTROLLER_ADMIN_EMAIL` in `.env.local` or the process environment before running init. Password hashes are stored in PostgreSQL using scrypt; plaintext passwords are only printed once during setup. Superadmins can create admin and viewer accounts in Settings; admins can create viewer accounts. New accounts receive a generated password shown once. To replace all operator credentials, explicitly run `npm run init:superadmin --override`.
 
-Sessions last eight hours, use HTTP-only SameSite cookies, and require secure cookies in production; deploy behind HTTPS. Login attempts are limited to 10 per normalized email per minute using PostgreSQL, shared across controller instances. Expired limiter rows are removed during login limiter activity. A successful login clears that email's counter, and changing the password invalidates existing sessions. Operator roles are admin and viewer: admins create inventory, viewers only read. There is no self-service password reset or operator-management UI; no tenant roles are implemented.
+Sessions last eight hours, use HTTP-only SameSite cookies, and require secure cookies in production; deploy behind HTTPS. Login attempts are limited to 10 per normalized email per minute using PostgreSQL, shared across controller instances. Expired limiter rows are removed during login limiter activity. A successful login clears that email's counter, and changing the password invalidates existing sessions. Superadmins and admins can manage operator accounts within their role limits; admins can also create inventory, while viewers are read-only. There is no self-service password reset; no tenant roles are implemented.
 
 ## Development
 
@@ -149,7 +179,7 @@ Open Devices and select Add device. Enter a name, choose Edge (connects a local 
 
 `GET/POST /api/operator/sites` and `/api/operator/nodes` use the existing operator cookie. GET permits admin/viewer; POST requires admin, JSON and an exact same-origin Origin header. Node creation accepts either mode/lanPrefix for the one-step device flow or a legacy siteId, not both. The UI label Edge uses the existing branch wire/storage value. Bodies are limited to 8192 bytes. Set `CONTROLLER_PUBLIC_ORIGIN=https://your-controller.example` (no trailing slash) in production before enabling inventory mutations; development derives the origin from the request Host. Production mutations fail closed without this configuration. Protect the Next.js upstream from untrusted proxy access before the M2 device API is exposed.
 
-Roles reside in `operators.role`; existing accounts remain admins after the additive superadmin migration. Only superadmins can edit the white-label logo in Settings. After `npm run migrate:controller`, assign a trusted existing operator with `npm run set:operator-role -- admin@example.com superadmin`. The same command can set `admin` or `viewer` to change roles. Keep at least one superadmin account. Permission changes are read from PostgreSQL, not cached in the signed cookie. The public logo endpoint exposes only the configured image; changes require a superadmin session and same-origin request.
+Roles reside in `operators.role`; existing accounts remain admins after the additive superadmin migration. New installations create the initial superadmin with `npm run init:superadmin`. In Settings, superadmins can create admins and viewers, while admins can create viewers. Only superadmins can edit the white-label logo. The host-only `npm run set:operator-role` command remains available for recovery and role changes. Keep at least one superadmin account. Permission changes are read from PostgreSQL, not cached in the signed cookie. The public logo endpoint exposes only the configured image; changes require a superadmin session and same-origin request.
 
 ## Isolated verification
 
