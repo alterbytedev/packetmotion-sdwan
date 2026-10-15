@@ -144,7 +144,7 @@ test('form/select semantics, clipboard feedback and responsive inventory', async
     page.getByRole('region', { name: 'Device enrollment' }).getByRole('alert'),
   ).toHaveCount(0);
   await page.getByRole('button', { name: 'Hide token', exact: true }).click();
-  await expect(page.getByRole('cell', { name: 'Not enrolled', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Pending', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

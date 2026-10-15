@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { Activity, ArrowLeft, Clock3, Copy, Fingerprint, Radio, Router, ShieldCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,15 +15,20 @@ import { NetworkConfigurationPreview } from './network-configuration-preview';
 import type { NodeRecord, OperatorRole } from '@/lib/fabric/types';
 
 export function DeviceDetails({ node, role }: { node: NodeRecord; role: OperatorRole }) {
+  const router = useRouter();
   const [enrollment, setEnrollment] = useState<EnrollmentDetails | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const statusTone = node.connectionStatus === 'connected'
+  const statusTone = node.connectionStatus === 'management-connected'
     ? 'border-emerald-600/30 bg-emerald-600/10 text-emerald-800 dark:text-emerald-300'
     : node.connectionStatus === 'revoked'
       ? 'border-rose-600/30 bg-rose-600/10 text-rose-800 dark:text-rose-300'
       : 'border-muted-foreground/20 bg-muted/60 text-muted-foreground';
   const lastSeen = node.lastSeenAt ? new Date(node.lastSeenAt).toLocaleString() : null;
+  useEffect(() => {
+    const timer = setInterval(() => router.refresh(), 15_000);
+    return () => clearInterval(timer);
+  }, [router]);
   async function copyDeviceId() {
     try {
       await navigator.clipboard.writeText(node.id);
@@ -32,6 +38,10 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
   }
   const inventory = { sites: [], nodes: [node] };
   async function token() {
+    if (
+      node.connectionStatus === 'enrolling' &&
+      !window.confirm('Reset this enrollment? The current certificate will be revoked and the device will need a new token.')
+    ) return;
     setPending(true);
     setError('');
     try {
@@ -73,9 +83,9 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
               </div>
             </div>
           </div>
-          {role !== 'viewer' && node.connectionStatus === 'not-enrolled' && (
+          {role !== 'viewer' && ['pending', 'enrolling'].includes(node.connectionStatus) && (
             <Button disabled={pending} onClick={token} className="w-full shrink-0 sm:w-auto">
-              {pending ? 'Creating token…' : 'Enroll device'}
+              {pending ? 'Creating token…' : node.connectionStatus === 'enrolling' ? 'Reset enrollment' : 'Enroll device'}
             </Button>
           )}
         </CardHeader>
@@ -83,8 +93,8 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border bg-background p-4">
               <div className="flex items-center gap-2 text-xs text-muted-foreground"><Activity size={15} aria-hidden="true" />Controller connection</div>
-              <div className="mt-3"><Badge className={statusTone}><span className={`size-1.5 rounded-full ${node.connectionStatus === 'connected' ? 'bg-emerald-600' : node.connectionStatus === 'revoked' ? 'bg-rose-600' : 'bg-current'}`} />{connectionStatusLabels[node.connectionStatus]}</Badge></div>
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">Management connection status only. Tunnel and routing health are not available here.</p>
+              <div className="mt-3"><Badge className={statusTone}><span className={`size-1.5 rounded-full ${node.connectionStatus === 'management-connected' ? 'bg-emerald-600' : node.connectionStatus === 'revoked' ? 'bg-rose-600' : 'bg-current'}`} />{connectionStatusLabels[node.connectionStatus]}</Badge></div>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">Configuration revision {node.configRevision ?? '—'}: {node.configStatus === 'received' ? 'received (staged only)' : node.configStatus ?? 'not-configured'}. Data-plane health is unavailable.</p>
             </div>
             <div className="rounded-lg border bg-background p-4">
               <div className="flex items-center gap-2 text-xs text-muted-foreground"><Clock3 size={15} aria-hidden="true" />Last check-in</div>

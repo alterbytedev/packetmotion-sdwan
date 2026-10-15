@@ -25,6 +25,7 @@
     "errors:show": "node scripts/show-runtime-error.mjs",
     "test:visual": "node scripts/compare-browser-baseline.mjs",
     "test:agent": "node scripts/test-isolated.mjs agent",
+    "build:agent-release": "node ../sdwan-edge/scripts/build-release.mjs",
     "init:device-ca": "node scripts/init-device-ca.mjs"
   },
   "dependencies": {

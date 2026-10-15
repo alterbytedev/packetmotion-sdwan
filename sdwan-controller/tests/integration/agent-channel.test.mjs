@@ -27,12 +27,23 @@ test.after(async()=>{await pool.end();await rm(directory,{recursive:true,force:t
 
 test('token is hashed, expiring, one-use and binds signed certificate to registered device',async()=>{
   const node=await inventory.createNode(actor,{name:'Enrolled Edge',kind:'branch',mode:'gateway'});
+  assert.equal(node.configRevision,1);
+  assert.equal(node.configStatus,'pending');
+  assert.equal(node.connectionStatus,'pending');
+  let listed=await inventory.listDevices(actor);
+  assert.equal(listed.nodes.find(item=>item.id===node.id).connectionStatus,'pending');
+  assert.equal(listed.nodes.find(item=>item.id===node.id).configStatus,'pending');
   const stored=(await pool.query('SELECT token_hash FROM enrollment_tokens WHERE node_id=$1',[node.id])).rows[0];
   assert.notEqual(stored.token_hash,node.enrollment.token);
   const results=await Promise.allSettled([enrollment.enrollDevice({token:node.enrollment.token,csr}),enrollment.enrollDevice({token:node.enrollment.token,csr})]);
   assert.equal(results.filter(result=>result.status==='fulfilled').length,1);
   const response=results.find(result=>result.status==='fulfilled').value;
   assert.equal(new X509Certificate(response.certificate).subject,`CN=${node.id}`);
+  listed=await inventory.listDevices(actor);
+  assert.equal(listed.nodes.find(item=>item.id===node.id).connectionStatus,'enrolling');
+  const initial=await channel.desiredConfig(node.id);
+  assert.equal(initial.revision,1);
+  assert.equal(JSON.stringify(initial.payload),JSON.stringify({schemaVersion:1,deviceKind:'branch',mode:'gateway',lanPrefix:null,pollIntervalSeconds:30}));
   const serial=new X509Certificate(response.certificate).serialNumber;
   assert.equal((await auth.authenticateDevice(headers(serial))).id,node.id);
   await assert.rejects(auth.authenticateDevice(new Request('https://agent.test',{headers:{'x-fabric-client-serial':serial,'x-fabric-client-verified':'SUCCESS'}})),/ingress/);
@@ -46,19 +57,31 @@ test('token is hashed, expiring, one-use and binds signed certificate to registe
   assert.equal(retryRotation.certificate,rotation.certificate);
   assert.equal((await pool.query('SELECT serial FROM device_certificates WHERE node_id=$1',[node.id])).rowCount,2);
 
-  const config=await channel.publishConfig(actor,node.id,{expectedRevision:0,pollIntervalSeconds:30});
-  assert.equal((await channel.desiredConfig(node.id)).revision,1);
-  const unchanged=await channel.desiredConfig(node.id,'1',config.checksum);
-  assert.equal(unchanged.revision,1);assert.equal(unchanged.checksum,config.checksum);assert.equal(unchanged.unchanged,true);assert.equal(unchanged.payload,undefined);
-  assert.ok((await channel.desiredConfig(node.id,'1','wrong')).payload);
-  assert.ok((await channel.desiredConfig(node.id,'0',config.checksum)).payload);
-  await channel.acknowledgeConfig(node.id,{revision:1,checksum:config.checksum,status:'received'});
-  await channel.acknowledgeConfig(node.id,{revision:1,checksum:config.checksum,status:'received'});
-  await assert.rejects(channel.acknowledgeConfig(node.id,{revision:1,checksum:config.checksum,status:'applied'}),/Invalid/);
-  await assert.rejects(channel.publishConfig(actor,node.id,{expectedRevision:0,pollIntervalSeconds:30}),/changed/);
+  const config=await channel.publishConfig(actor,node.id,{expectedRevision:1,pollIntervalSeconds:30});
+  assert.equal((await channel.desiredConfig(node.id)).revision,2);
+  const unchanged=await channel.desiredConfig(node.id,'2',config.checksum);
+  assert.equal(unchanged.revision,2);assert.equal(unchanged.checksum,config.checksum);assert.equal(unchanged.unchanged,true);assert.equal(unchanged.payload,undefined);
+  assert.ok((await channel.desiredConfig(node.id,'2','wrong')).payload);
+  assert.ok((await channel.desiredConfig(node.id,'1',config.checksum)).payload);
+  await channel.acknowledgeConfig(node.id,{revision:2,checksum:config.checksum,status:'received'});
+  await channel.acknowledgeConfig(node.id,{revision:2,checksum:config.checksum,status:'received'});
+  await assert.rejects(channel.acknowledgeConfig(node.id,{revision:2,checksum:config.checksum,status:'applied'}),/Invalid/);
+  await assert.rejects(channel.publishConfig(actor,node.id,{expectedRevision:1,pollIntervalSeconds:30}),/changed/);
   const snapshot={eventId:randomUUID(),agentVersion:'0.1.0',os:'linux',arch:'amd64',uptimeSeconds:10,interfaces:[{name:'eth0',up:true,mtu:1500}]};
   await channel.recordHeartbeat(node.id,snapshot);await channel.recordHeartbeat(node.id,snapshot);
-  assert.equal((await pool.query('SELECT * FROM device_telemetry WHERE node_id=$1',[node.id])).rowCount,1);
+  const connected=await inventory.listDevices(actor);
+  assert.equal(connected.nodes.find(item=>item.id===node.id).connectionStatus,'management-connected');
+  assert.equal(connected.nodes.find(item=>item.id===node.id).configStatus,'received');
+  const rejected=await channel.publishConfig(actor,node.id,{expectedRevision:2,pollIntervalSeconds:45});
+  await channel.acknowledgeConfig(node.id,{revision:3,checksum:rejected.checksum,status:'rejected'});
+  await channel.recordHeartbeat(node.id,{...snapshot,eventId:randomUUID()});
+  listed=await inventory.listDevices(actor);
+  assert.equal(listed.nodes.find(item=>item.id===node.id).connectionStatus,'syncing');
+  assert.equal(listed.nodes.find(item=>item.id===node.id).configStatus,'rejected');
+  await pool.query("UPDATE nodes SET last_seen_at=now()-interval '10 minutes' WHERE id=$1",[node.id]);
+  listed=await inventory.listDevices(actor);
+  assert.equal(listed.nodes.find(item=>item.id===node.id).connectionStatus,'offline');
+  assert.equal((await pool.query('SELECT * FROM device_telemetry WHERE node_id=$1',[node.id])).rowCount,2);
   await assert.rejects(channel.recordHeartbeat(node.id,{...snapshot,uptimeSeconds:11}),/reused/);
   assert.equal((await channel.readTelemetry(actor,node.id)).telemetry.snapshot.os,'linux');
   await enrollment.revokeDevice(actor,node.id);
@@ -77,4 +100,21 @@ test('expired/replaced/revoked enrollment and viewer issuance fail without chang
   assert.equal((await pool.query('SELECT enrolled_at FROM nodes WHERE id=$1',[node.id])).rows[0].enrolled_at,null);
   await enrollment.revokeDevice(actor,node.id);
   await assert.rejects(enrollment.enrollDevice({token:active.token,csr}),/expired, used, or revoked/);
+});
+
+test('consumed enrollment can be recovered before first heartbeat; active identities cannot be reset',async()=>{
+  const node=await inventory.createNode(actor,{name:'Recovery Edge',kind:'branch',mode:'gateway'});
+  const enrolled=await enrollment.enrollDevice({token:node.enrollment.token,csr});
+  const oldSerial=new X509Certificate(enrolled.certificate).serialNumber;
+  const replacement=await enrollment.reissueEnrollment(actor,node.id);
+  assert.notEqual(replacement.token,node.enrollment.token);
+  const oldNormalized=oldSerial.toLowerCase().replace(/^0+/, '');
+  assert.equal((await pool.query('SELECT revoked_at IS NOT NULL AS revoked FROM device_certificates WHERE serial=$1',[oldNormalized])).rows[0].revoked,true);
+  const recovered=await enrollment.enrollDevice({token:replacement.token,csr});
+  assert.equal(recovered.nodeId,node.id);
+  const currentSerial=new X509Certificate(recovered.certificate).serialNumber.toLowerCase().replace(/^0+/, '');
+  await channel.recordHeartbeat(node.id,{eventId:randomUUID(),agentVersion:'0.1.0',os:'linux',arch:'amd64',uptimeSeconds:1,interfaces:[]});
+  await assert.rejects(enrollment.reissueEnrollment(actor,node.id),/active device/);
+  assert.ok((await pool.query("SELECT 1 FROM audit_events WHERE resource_id=$1 AND action='device.enrollment_reset'",[node.id])).rowCount);
+  assert.equal((await pool.query('SELECT revoked_at FROM device_certificates WHERE serial=$1',[currentSerial])).rows[0].revoked_at,null);
 });

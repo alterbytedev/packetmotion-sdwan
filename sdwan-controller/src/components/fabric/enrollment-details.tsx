@@ -4,7 +4,13 @@ import { Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Feedback } from '@/components/ui/feedback';
 
-export type EnrollmentDetails = { token: string; expiresAt: string; controllerUrl?: string | null };
+export type EnrollmentDetails = {
+  token: string;
+  expiresAt: string;
+  controllerUrl?: string | null;
+  allowInsecureHttp?: boolean;
+  insecureHttpBlocked?: boolean;
+};
 export function EnrollmentInstructions({
   enrollment,
   onClose,
@@ -15,8 +21,9 @@ export function EnrollmentInstructions({
   const [copiedToken, setCopiedToken] = useState('');
   const [copyError, setCopyError] = useState('');
   const copied = copiedToken === enrollment.token;
-  const origin = enrollment.controllerUrl || '';
+  const origin = (enrollment.controllerUrl || '').replace(/\/$/, '');
   const local = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(origin);
+  const allowHttp = local || enrollment.allowInsecureHttp;
   return (
     <section
       aria-label="Device enrollment"
@@ -65,21 +72,23 @@ export function EnrollmentInstructions({
       {origin ? (
         <>
           <p className="text-xs text-muted-foreground">
-            On the device, set <code>FABRIC_ENROLLMENT_TOKEN</code> to this token, then run:
+            Run this on the Debian device. It downloads the installer from this Controller and
+            prompts for the one-time token without displaying it.
           </p>
+          {allowHttp && <p className="text-xs font-medium text-amber-800 dark:text-amber-300">HTTP is unencrypted. Use this only on an isolated, trusted lab network.</p>}
           <code className="block break-all rounded-lg bg-muted p-3 text-xs">
-            fabric-agent enroll --controller {origin}
-            {local ? ' --allow-insecure-local' : ''}
+            curl -fsSLo install.sh {origin}/fabric/edge.sh &amp;&amp; sudo bash install.sh --controller {origin}{allowHttp ? ' --allow-insecure-local' : ''}
           </code>
-          <code className="block break-all rounded-lg bg-muted p-3 text-xs">fabric-agent run</code>
           <p className="text-xs text-muted-foreground">
-            The agent initiates the connection. No inbound port is needed on the device.
+            The installer verifies the signed agent release and installs a systemd service. The
+            agent connects outbound; no inbound port is needed.
           </p>
         </>
       ) : (
         <p className="text-xs text-muted-foreground">
-          The controller connection address needs to be configured before enrollment. Ask your
-          controller administrator to complete connection setup.
+          {enrollment.insecureHttpBlocked
+            ? 'This HTTP controller address is not in the superadmin-configured lab allowlist. Add its private IP under Settings → Insecure HTTP lab controllers or configure HTTPS.'
+            : 'The controller connection address needs to be configured before enrollment. Ask your controller administrator to complete connection setup.'}
         </p>
       )}
     </section>

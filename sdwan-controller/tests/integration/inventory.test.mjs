@@ -40,7 +40,7 @@ test('migration is repeatable, preserves credentials and detects modified applie
     before.rows,
   );
   const migrations = await pool.query('SELECT * FROM controller_migrations ORDER BY name');
-  assert.equal(migrations.rowCount, 5);
+  assert.equal(migrations.rowCount, 7);
   const original = migrations.rows[0].checksum;
   await pool.query(
     "UPDATE controller_migrations SET checksum = 'tampered' WHERE name = '0001_inventory_roles_audit.sql'",
@@ -91,7 +91,7 @@ test('inventory persists, is audited and is readable by viewer; viewer or missin
         node.id,
       ])
     ).rowCount,
-    3,
+    4,
   );
   const persistedBefore = (await pool.query('SELECT id,name FROM sites ORDER BY id')).rows;
   await migrateController(pool);
@@ -107,7 +107,7 @@ test('inventory persists, is audited and is readable by viewer; viewer or missin
         node.id,
       ])
     ).rowCount,
-    3,
+    4,
   );
   await assert.rejects(
     inventory.createNode(admin, { name: node.name, siteId: site.id, kind: 'branch' }),
@@ -196,7 +196,7 @@ test('one-step device creation is atomic, rejects overlap, and leaves no network
         node.siteId,
       ])
     ).rowCount,
-    3,
+    4,
   );
   await assert.rejects(
     inventory.createNode(admin, {

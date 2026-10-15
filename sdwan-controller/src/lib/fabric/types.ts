@@ -13,7 +13,9 @@ export type NodeRecord = {
   siteName: string;
   name: string;
   kind: 'hub' | 'branch';
-  connectionStatus: 'connected' | 'offline' | 'not-enrolled' | 'revoked';
+  connectionStatus: 'pending' | 'enrolling' | 'syncing' | 'management-connected' | 'offline' | 'revoked';
+  configRevision: number | null;
+  configStatus: 'pending' | 'received' | 'rejected' | 'not-configured' | null;
   lastSeenAt: string | null;
   createdAt: string;
 };

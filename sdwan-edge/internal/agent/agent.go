@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.0"
+const Version = "0.1.2"
 
 type Enrolled struct {
 	NodeID      string `json:"nodeId"`

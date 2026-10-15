@@ -36,7 +36,7 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
   const pageCount = Math.max(1, Math.ceil(result.total / result.pageSize));
   const connected =
     inventory.connected ??
-    inventory.nodes.filter((node) => node.connectionStatus === 'connected').length;
+    inventory.nodes.filter((node) => node.connectionStatus === 'management-connected').length;
   useEffect(() => {
     const abort = new AbortController();
     setLoading(true);
@@ -68,6 +68,10 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
       abort.abort();
     };
   }, [search, page, pageSize, refresh]);
+  useEffect(() => {
+    const timer = setInterval(() => setRefresh((value) => value + 1), 15_000);
+    return () => clearInterval(timer);
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -144,7 +148,7 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
             <p className="mt-1 text-xl font-semibold tabular-nums">{result.total}</p>
           </div>
           <div className="rounded-lg border bg-background p-3">
-            <p className="text-xs text-muted-foreground">Controller connected</p>
+            <p className="text-xs text-muted-foreground">Management connected</p>
             <p className="mt-1 text-xl font-semibold tabular-nums">{connected}</p>
           </div>
           <div className="rounded-lg border bg-background p-3">
@@ -162,8 +166,7 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
           </div>
         </div>
         <p className="mb-4 rounded-md bg-muted/50 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          Connection reflects the controller management heartbeat. Tunnel and routing health are not
-          shown here.
+          Management connection and configuration receipt are shown here. Network and tunnel health are unavailable.
         </p>
         {enrollment && (
           <EnrollmentInstructions enrollment={enrollment} onClose={() => setEnrollment(null)} />
@@ -324,7 +327,7 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
                     <td className="px-4 py-4">
                       <Badge
                         className={
-                          node.connectionStatus === 'connected'
+                          node.connectionStatus === 'management-connected'
                             ? 'border-emerald-600/30 bg-emerald-600/10 text-emerald-800 dark:text-emerald-300'
                             : node.connectionStatus === 'revoked'
                               ? 'border-rose-600/30 bg-rose-600/10 text-rose-800 dark:text-rose-300'
@@ -333,7 +336,7 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
                       >
                         <span
                           aria-hidden="true"
-                          className={`size-1.5 rounded-full ${node.connectionStatus === 'connected' ? 'bg-emerald-600' : node.connectionStatus === 'revoked' ? 'bg-rose-600' : 'bg-current'}`}
+                          className={`size-1.5 rounded-full ${node.connectionStatus === 'management-connected' ? 'bg-emerald-600' : node.connectionStatus === 'revoked' ? 'bg-rose-600' : 'bg-current'}`}
                         />
                         {connectionStatusLabels[node.connectionStatus]}
                       </Badge>
@@ -345,7 +348,7 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
                             {role !== 'viewer' ? 'Configure' : 'View'}
                           </Link>
                         </Button>
-                        {role !== 'viewer' && node.connectionStatus === 'not-enrolled' && (
+                        {role !== 'viewer' && node.connectionStatus === 'pending' && (
                           <Button
                             type="button"
                             variant="ghost"

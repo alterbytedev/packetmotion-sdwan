@@ -23,12 +23,20 @@ export async function issueToken(client: PoolClient, actor: Actor, nodeId: strin
 export async function reissueEnrollment(actor: Actor | null, nodeId: string) {
   return mutate(actor, async (client, fresh) => {
     const node = await client.query(
-      'SELECT enrolled_at,revoked_at FROM nodes WHERE id=$1 FOR UPDATE',
+      'SELECT enrolled_at,revoked_at,last_seen_at FROM nodes WHERE id=$1 FOR UPDATE',
       [nodeId],
     );
     if (!node.rowCount) throw new FabricError(404, 'Device not found.');
-    if (node.rows[0].enrolled_at || node.rows[0].revoked_at)
+    if (node.rows[0].revoked_at)
       throw new FabricError(409, 'Device is already enrolled or revoked.');
+    if (node.rows[0].enrolled_at) {
+      if (node.rows[0].last_seen_at)
+        throw new FabricError(409, 'An active device cannot have its enrollment reset.');
+      await client.query('UPDATE device_certificates SET revoked_at=now() WHERE node_id=$1 AND revoked_at IS NULL', [nodeId]);
+      await client.query('UPDATE enrollment_tokens SET revoked_at=now() WHERE node_id=$1 AND revoked_at IS NULL', [nodeId]);
+      await client.query('UPDATE nodes SET enrolled_at=NULL WHERE id=$1', [nodeId]);
+      await auditCreation(client, fresh, 'device.enrollment_reset', nodeId);
+    }
     return issueToken(client, fresh, nodeId);
   });
 }

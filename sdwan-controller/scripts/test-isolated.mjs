@@ -16,7 +16,7 @@ url.pathname = `/${name}`;
 const secret = randomBytes(32).toString('hex');
 const password = randomBytes(18).toString('base64url');
 const childEnv = { ...process.env, DATABASE_URL: url.toString(), CONTROLLER_SESSION_SECRET: secret,
-  CONTROLLER_PUBLIC_ORIGIN: 'http://127.0.0.1:3107', FABRIC_TEST_ISOLATED: '1', FABRIC_TEST_EMAIL: 'integration@example.test', FABRIC_TEST_PASSWORD: password };
+  CONTROLLER_PUBLIC_ORIGIN: 'http://127.0.0.1:3107', CONTROLLER_ENROLLMENT_URL: 'http://127.0.0.1:3107', FABRIC_TEST_ISOLATED: '1', FABRIC_TEST_EMAIL: 'integration@example.test', FABRIC_TEST_PASSWORD: password };
 function run(command, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { env: childEnv, stdio: 'inherit' });

@@ -22,6 +22,15 @@ test('inventory OpenAPI is valid and matches implemented protected methods', asy
     assert.ok(operators[method].responses['403']);
   }
   assert.match(operators.post.description, /Superadmins may create admins or viewers; admins may create viewers only/);
+  const httpHosts = spec.paths['/api/operator/controller-settings/insecure-http-hosts'];
+  const httpHostsRoute = readFileSync('src/app/api/operator/controller-settings/insecure-http-hosts/route.ts', 'utf8');
+  for (const method of ['get', 'put']) {
+    assert.ok(httpHosts[method]);
+    assert.match(httpHostsRoute, new RegExp(`export function ${method.toUpperCase()}\\(`));
+    assert.deepEqual(httpHosts[method].security, [{ operatorSession: [] }]);
+    assert.ok(httpHosts[method].responses['401']);
+    assert.ok(httpHosts[method].responses['403']);
+  }
   for (const resource of ['sites', 'nodes']) {
     const path = spec.paths[`/api/operator/${resource}`];
     const source = readFileSync(`src/app/api/operator/${resource}/route.ts`, 'utf8');

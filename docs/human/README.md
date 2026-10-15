@@ -21,6 +21,7 @@ This index groups the product and operational material for operators, reviewers,
 
 - [Debian bootstrap and interface-name-preserving networking](../../sdwan-edge/sdwan-provisioning-scripts/README.md)
 - [Management communication and recovery](../operations/management-channel.md)
+- [Edge and Hub agent installation](../operations/agent-installation.md)
 - [Runtime error troubleshooting](../operations/runtime-error-troubleshooting.md)
 - [Testing strategy](../development/testing-strategy.md)
 - [Controller UI component architecture](../development/ui-component-architecture.md)

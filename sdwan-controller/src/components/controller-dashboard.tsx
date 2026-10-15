@@ -365,16 +365,16 @@ export function ControllerDashboard({
                     note: inventoryError ? 'Inventory unavailable' : 'Registered inventory',
                   },
                   {
-                    title: 'Connected devices',
+                    title: 'Management connected',
                     icon: Globe2,
                     value: inventoryError
                       ? '—'
                       : String(
                           inventory.connected ??
-                            inventory.nodes.filter((node) => node.connectionStatus === 'connected')
+                            inventory.nodes.filter((node) => node.connectionStatus === 'management-connected')
                               .length,
                         ),
-                    note: 'Controller heartbeat',
+                    note: 'Fresh heartbeat and latest revision received',
                   },
                   {
                     title: 'Active configurations',
@@ -444,7 +444,7 @@ export function ControllerDashboard({
                         </div>
                         <h3 className="text-sm font-semibold">No devices connected</h3>
                         <p className="mt-2 max-w-xs text-xs leading-5 text-muted-foreground">
-                          Device connection status will appear here after enrollment is available.
+                          Device management status will appear here after its agent connects.
                         </p>
                         <Button asChild variant="outline" size="sm" className="mt-5">
                           <Link href="/dashboard/devices">

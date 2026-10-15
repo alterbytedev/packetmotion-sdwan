@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,11 +32,20 @@ func ValidateURL(address string, allowLocal bool) error {
 	if parsed.Scheme == "https" {
 		return nil
 	}
-	if allowLocal && parsed.Scheme == "http" && (parsed.Hostname() == "localhost" || parsed.Hostname() == "127.0.0.1" || parsed.Hostname() == "::1") {
+	if allowLocal && parsed.Scheme == "http" && isAllowedInsecureHost(parsed.Hostname()) {
 		return nil
 	}
-	return errors.New("HTTPS is required (local HTTP requires --allow-insecure-local)")
+	return errors.New("HTTPS is required (HTTP requires --allow-insecure-local and a loopback or approved lab controller address)")
 }
+
+func isAllowedInsecureHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
+
 func New(address, serverCA, cert, key string, allowLocal bool) (*Client, error) {
 	if err := ValidateURL(address, allowLocal); err != nil {
 		return nil, err

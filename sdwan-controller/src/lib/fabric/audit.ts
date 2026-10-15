@@ -9,6 +9,7 @@ export async function auditCreation(
     | 'site.created'
     | 'node.created'
     | 'enrollment.issued'
+    | 'device.enrollment_reset'
     | 'device.revoked'
     | 'config.published',
   resourceId: string,

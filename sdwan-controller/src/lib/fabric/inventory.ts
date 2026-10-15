@@ -1,5 +1,5 @@
 import 'server-only';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { URLSearchParams } from 'node:url';
 import type { PoolClient } from 'pg';
 import { getDatabase } from '../db';
@@ -11,7 +11,17 @@ import type { Actor, Inventory, Site, NodeRecord } from './types';
 
 const siteColumns =
   'id, name, mode, lan_prefix::text AS "lanPrefix", created_at::text AS "createdAt"';
-const nodeColumns = `n.id, n.site_id AS "siteId", s.name AS "siteName", n.name, n.kind, n.created_at::text AS "createdAt", n.last_seen_at::text AS "lastSeenAt", CASE WHEN n.revoked_at IS NOT NULL THEN 'revoked' WHEN n.enrolled_at IS NULL THEN 'not-enrolled' WHEN n.last_seen_at > now()-make_interval(secs=>GREATEST(120,3*COALESCE((SELECT (dc.payload::jsonb->>'pollIntervalSeconds')::int FROM desired_configs dc WHERE dc.node_id=n.id ORDER BY dc.revision DESC LIMIT 1),30))) THEN 'connected' ELSE 'offline' END AS "connectionStatus"`;
+const nodeColumns = `n.id, n.site_id AS "siteId", s.name AS "siteName", n.name, n.kind, n.created_at::text AS "createdAt", n.last_seen_at::text AS "lastSeenAt",
+  (SELECT dc.revision FROM desired_configs dc WHERE dc.node_id=n.id ORDER BY dc.revision DESC LIMIT 1) AS "configRevision",
+  CASE WHEN NOT EXISTS (SELECT 1 FROM desired_configs dc WHERE dc.node_id=n.id) THEN 'not-configured'
+       ELSE COALESCE((SELECT ca.status FROM config_acknowledgements ca WHERE ca.node_id=n.id AND ca.revision=(SELECT max(dc.revision) FROM desired_configs dc WHERE dc.node_id=n.id)), 'pending') END AS "configStatus",
+  CASE WHEN n.revoked_at IS NOT NULL THEN 'revoked'
+       WHEN n.enrolled_at IS NULL THEN 'pending'
+       WHEN n.last_seen_at IS NULL THEN 'enrolling'
+       WHEN n.last_seen_at <= now()-make_interval(secs=>GREATEST(120,3*COALESCE((SELECT (dc.payload::jsonb->>'pollIntervalSeconds')::int FROM desired_configs dc WHERE dc.node_id=n.id ORDER BY dc.revision DESC LIMIT 1),30))) THEN 'offline'
+       WHEN NOT EXISTS (SELECT 1 FROM desired_configs dc WHERE dc.node_id=n.id) THEN 'syncing'
+       WHEN NOT EXISTS (SELECT 1 FROM config_acknowledgements ca WHERE ca.node_id=n.id AND ca.revision=(SELECT max(dc.revision) FROM desired_configs dc WHERE dc.node_id=n.id) AND ca.status='received') THEN 'syncing'
+       ELSE 'management-connected' END AS "connectionStatus"`;
 
 export async function listInventory(actor: Actor | null): Promise<Inventory> {
   authorize(actor);
@@ -95,7 +105,10 @@ export async function createNode(
     const siteId = input.network
       ? (await insertSite(client, fresh, input.network)).id
       : input.siteId;
-    const site = await client.query('SELECT id FROM sites WHERE id = $1 FOR SHARE', [siteId]);
+    const site = await client.query<{ mode: 'gateway' | 'subnet-router'; prefix: string | null }>(
+      'SELECT mode,lan_prefix::text AS prefix FROM sites WHERE id = $1 FOR SHARE',
+      [siteId],
+    );
     if (!site.rowCount) throw new FabricError(400, 'The selected site does not exist.');
     const id = randomUUID();
     await client.query('INSERT INTO nodes (id,site_id,name,kind) VALUES ($1,$2,$3,$4)', [
@@ -105,6 +118,20 @@ export async function createNode(
       input.kind,
     ]);
     await auditCreation(client, fresh, 'node.created', id);
+    const payload = {
+      schemaVersion: 1,
+      deviceKind: input.kind,
+      mode: input.network?.mode ?? site.rows[0].mode,
+      lanPrefix: input.network?.lanPrefix ?? site.rows[0].prefix,
+      pollIntervalSeconds: 30,
+    };
+    const serialized = JSON.stringify(payload);
+    const checksum = createHash('sha256').update(serialized).digest('hex');
+    await client.query(
+      'INSERT INTO desired_configs(node_id,revision,payload,checksum) VALUES($1,1,$2,$3)',
+      [id, serialized, checksum],
+    );
+    await auditCreation(client, fresh, 'config.published', id);
     const result = await client.query<NodeRecord>(
       `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id = n.site_id WHERE n.id = $1`,
       [id],
@@ -174,7 +201,7 @@ export async function getDevice(actor: Actor | null, id: string): Promise<NodeRe
 export async function dashboardInventory(actor: Actor | null): Promise<Inventory> {
   const devices = await listDevices(actor);
   const counts = await getDatabase().query<{ connected: number }>(
-    `SELECT count(*)::int AS connected FROM (SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id=n.site_id) devices WHERE "connectionStatus"='connected'`,
+    `SELECT count(*)::int AS connected FROM (SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id=n.site_id) devices WHERE "connectionStatus"='management-connected'`,
   );
   return {
     sites: [],

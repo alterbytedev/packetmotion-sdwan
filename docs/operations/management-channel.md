@@ -2,9 +2,9 @@
 
 ## Architecture and guarantees
 
-The existing Next.js controller owns server-only domain services and PostgreSQL. The shared Go agent initiates outbound HTTPS; dedicated client certificates authenticate Edge/Hub devices through NGINX. The authenticated upstream checks active certificate/node scope on every request, including reused TLS connections. Operator sessions remain separate. No inbound Edge management listener, message broker, streaming service, or generic remote shell is introduced.
+The existing Next.js controller owns server-only domain services and PostgreSQL. The shared Go agent initiates outbound HTTPS by default; dedicated client certificates authenticate Edge/Hub devices through NGINX. The authenticated upstream checks active certificate/node scope on every request, including reused TLS connections. For isolated development labs only, an explicit agent/install flag permits HTTP to private or loopback IPs; the superadmin-configured Settings allowlist controls whether the operator UI emits that flag. HTTP mode exposes enrollment and management traffic. Operator sessions remain separate. No inbound Edge management listener, message broker, streaming service, or generic remote shell is introduced.
 
-Enrollment uses the existing expiring single-use token and locally generated private key. State is private (0700 directory, 0600 files), written using fsync and rename. Enrollment response loss after token consumption requires operator recovery. PEM storage is not application-level encrypted; production CA custody and encrypted host storage remain deployment requirements.
+Enrollment uses the existing expiring single-use token and locally generated private key. State is private (0700 directory, 0600 files), written using fsync and rename. If a token was consumed but the device never received its identity, an admin can reset enrollment while no heartbeat exists; this revokes the issued certificate and returns the device to pending enrollment. PEM storage is not application-level encrypted; production CA custody and encrypted host storage remain deployment requirements.
 
 ## Reconciliation and recovery
 

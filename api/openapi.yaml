@@ -133,6 +133,21 @@
         "responses": {"201": {"description": "Operator created; includes the generated password exactly once."}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "409": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}
       }
     },
+    "/api/operator/controller-settings/insecure-http-hosts": {
+      "get": {
+        "operationId": "getInsecureHttpHosts",
+        "security": [{"operatorSession": []}],
+        "description": "Superadmin only. Returns the private controller IPs that may be shown in HTTP lab enrollment commands.",
+        "responses": {"200": {"description": "Configured host allowlist."}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}
+      },
+      "put": {
+        "operationId": "replaceInsecureHttpHosts",
+        "security": [{"operatorSession": []}],
+        "description": "Superadmin only; exact same-origin JSON request. Allows at most 64 private IPv4/IPv6 or loopback addresses. The list controls generated UI instructions; HTTP remains unencrypted and is for isolated labs only.",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "required": ["hosts"], "properties": {"hosts": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "format": "ip"}}}}}}},
+        "responses": {"201": {"description": "Allowlist replaced."}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}
+      }
+    },
     "/api/operator/sites": {
       "get": {
         "operationId": "listSites",
@@ -298,7 +313,7 @@
             "$ref": "#/components/responses/Error"
           }
         },
-        "description": "Authenticated asynchronous inventory. Literal case-insensitive substring search by device name or Edge/Hub type. Stable name/id ordering; bounded server pagination; out-of-range page clamps to last page. No tokens returned.",
+        "description": "Authenticated asynchronous inventory. Literal case-insensitive substring search by device name or Edge/Hub type. Stable name/id ordering; bounded server pagination; out-of-range page clamps to last page. Status separates pending enrollment, active enrollment, configuration receipt, management heartbeat, and offline/revoked states. No tokens returned.",
         "parameters": [
           {
             "name": "search",
@@ -342,7 +357,7 @@
             "operatorSession": []
           }
         ],
-        "description": "Admin only; same Origin and JSON size requirements as createSite. Supply mode and optional lanPrefix to register a device and its internal network in one atomic transaction; legacy siteId registration remains supported. Branch is the wire value for an Edge device. No enrollment or networking side effects.",
+        "description": "Admin only; same Origin and JSON size requirements as createSite. Supply mode and optional lanPrefix to register a device and its internal network in one atomic transaction; legacy siteId registration remains supported. Branch is the wire value for an Edge device. Creates a 15-minute one-use enrollment token and initial typed desired revision; the agent only stages and acknowledges receipt, it does not apply network configuration.",
         "requestBody": {
           "required": true,
           "content": {
@@ -763,7 +778,7 @@
             "operatorSession": []
           }
         ],
-        "description": "Admin only; same-origin Origin, JSON and 8192-byte limit required.",
+        "description": "Admin only; same-origin Origin, JSON and 8192-byte limit required. Issues a replacement token for pending enrollment. If the prior token was consumed but the device has never sent a heartbeat, revokes its issued certificate and resets enrollment before issuing a replacement. Active devices cannot be reset through this recovery path.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1222,7 +1237,11 @@
           "siteName",
           "name",
           "kind",
-          "createdAt"
+          "createdAt",
+          "connectionStatus",
+          "configRevision",
+          "configStatus",
+          "lastSeenAt"
         ],
         "properties": {
           "id": {
@@ -1253,11 +1272,21 @@
           "connectionStatus": {
             "type": "string",
             "enum": [
-              "connected",
+              "pending",
+              "enrolling",
+              "syncing",
+              "management-connected",
               "offline",
-              "not-enrolled",
               "revoked"
             ]
+          },
+          "configRevision": {
+            "type": ["integer", "null"],
+            "description": "Latest desired revision; receipt acknowledgement is not network application."
+          },
+          "configStatus": {
+            "type": ["string", "null"],
+            "enum": ["pending", "received", "rejected", "not-configured", null]
           },
           "lastSeenAt": {
             "type": [

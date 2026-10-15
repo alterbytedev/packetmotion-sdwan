@@ -1,8 +1,10 @@
 import type { NodeRecord } from '@/lib/fabric/types';
 
 export const connectionStatusLabels: Record<NodeRecord['connectionStatus'], string> = {
-  connected: 'Controller connected',
+  pending: 'Pending',
+  enrolling: 'Enrolling',
+  syncing: 'Syncing',
+  'management-connected': 'Management connected',
   offline: 'Controller offline',
-  'not-enrolled': 'Not enrolled',
   revoked: 'Revoked',
 };

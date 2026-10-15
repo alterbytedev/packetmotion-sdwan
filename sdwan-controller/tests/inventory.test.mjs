@@ -71,3 +71,27 @@ test('request boundary denies CSRF, malformed JSON, large bodies and viewer writ
   } finally { if (originalNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = originalNodeEnv; }
 
 });
+
+test('enrollment instructions use the request origin when no public enrollment URL is configured', async () => {
+  const route = load('src/app/api/operator/nodes/route.ts');
+  const inventory = {
+    createNode: async () => ({
+      id: '00000000-0000-0000-0000-000000000001',
+      enrollment: { token: 'pm_enroll_test', expiresAt: '2030-01-01T00:00:00Z' },
+    }),
+  };
+  const routeLoader = loader({
+    '@/lib/fabric/http': {
+      operatorRequest: async (_request, _mutation, handler) =>
+        Response.json(await handler(admin, {})),
+    },
+    '@/lib/fabric/inventory': inventory,
+  });
+  const { POST } = routeLoader('src/app/api/operator/nodes/route.ts');
+  const response = await POST(new Request('http://next-internal:3000/api/operator/nodes', {
+    method: 'POST',
+    headers: { origin: 'https://controller.example.test' },
+  }));
+  const result = await response.json();
+  assert.equal(result.enrollment.controllerUrl, 'https://controller.example.test');
+});

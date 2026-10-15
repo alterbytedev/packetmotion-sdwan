@@ -1,9 +1,20 @@
 import type { NextConfig } from 'next';
+import { networkInterfaces } from 'node:os';
 
-const allowedDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS || '100.83.173.93')
+const configuredDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS || '100.83.173.93')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+const interfaceDevOrigins = Object.values(networkInterfaces())
+  .flatMap((addresses) => addresses ?? [])
+  .flatMap(({ address, family }) =>
+    address.includes('%')
+      ? []
+      : family === 'IPv6' || family === 6
+        ? [address, `[${address}]`]
+        : [address],
+  );
+const allowedDevOrigins = [...new Set([...configuredDevOrigins, ...interfaceDevOrigins])];
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,

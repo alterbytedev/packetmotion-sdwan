@@ -95,11 +95,13 @@ test('admin creates site/device through UI, reloads persisted inventory and reje
   await page.getByLabel('LAN subnet (optional)', { exact: true }).fill('10.61.0.0/24');
   await page.getByRole('button', { name: 'Save device', exact: true }).click();
   await expect(page.getByTestId('enrollment-token')).toHaveText(/^pm_enroll_[a-f0-9]{64}$/);
+  await expect(page.getByText(/curl -fsSLo install\.sh http:\/\/127\.0\.0\.1:3107\/fabric\/edge\.sh/)).toBeVisible();
+  await expect(page.getByText(/--allow-insecure-local/)).toBeVisible();
   await page.getByRole('button', { name: 'Hide token', exact: true }).click();
   await expect(page.getByTestId('enrollment-token')).toHaveCount(0);
   const device = page.getByRole('link', { name: 'Jakarta edge', exact: true });
   await expect(device).toBeVisible();
-  const status = page.getByRole('cell', { name: 'Not enrolled', exact: true });
+  const status = page.getByRole('cell', { name: 'Pending', exact: true });
   await expect(status).toBeVisible();
   await page.reload();
   await expect(device).toBeVisible();
@@ -152,7 +154,7 @@ test('admin creates site/device through UI, reloads persisted inventory and reje
     ).status(),
   ).toBe(400);
   await database(async (pool) => {
-    expect((await pool.query('SELECT action FROM audit_events')).rowCount).toBe(3);
+    expect((await pool.query('SELECT action FROM audit_events')).rowCount).toBe(4);
     expect((await pool.query('SELECT id FROM sites')).rowCount).toBe(1);
   });
   await page.goto('/dashboard');
@@ -162,13 +164,13 @@ test('admin creates site/device through UI, reloads persisted inventory and reje
   await expect(page).toHaveURL(/dashboard\/devices(?:$|\?)/);
   await page.getByRole('link', { name: 'Jakarta edge', exact: true }).click();
   await expect(page).toHaveURL(/\/dashboard\/devices\/[0-9a-f-]+$/);
-  await expect(page.getByRole('button', { name: 'New token', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Enroll device', exact: true })).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Publish configuration', exact: true }),
   ).toBeEnabled({ timeout: 15_000 }); // Allow the isolated Next dev server to compile the config route.
   await page.getByLabel('Check-in interval (seconds)', { exact: true }).fill('45');
   await page.getByRole('button', { name: 'Publish configuration', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Revision 1 published.');
+  await expect(page.getByRole('status')).toContainText('Revision 2 published.');
 });
 
 test('current viewer role permits reading but blocks API and hides mutation controls; forged cookie fails', async ({
@@ -347,7 +349,7 @@ test('async device search ignores older responses and recovers from load errors'
   await search.fill('fail');
   await expect(page.locator('p[role="alert"]')).toHaveText('Unable to load devices.');
   await page.unroute('**/api/operator/nodes?*');
-  await page.getByRole('button', { name: 'Refresh devices', exact: true }).click();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.locator('p[role="alert"]')).toHaveCount(0);
   await expect(page.getByText('No devices match “fail”', { exact: true })).toBeVisible();
 });

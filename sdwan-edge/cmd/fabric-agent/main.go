@@ -28,11 +28,15 @@ func execute() error {
 	if len(os.Args) < 2 {
 		return errors.New("usage: fabric-agent enroll|run [options]")
 	}
+	if os.Args[1] == "version" {
+		fmt.Println(agent.Version)
+		return nil
+	}
 	flags := flag.NewFlagSet(os.Args[1], flag.ContinueOnError)
 	address := flags.String("controller", "", "controller HTTPS origin")
 	directory := flags.String("state-dir", "/var/lib/packetmotion", "private state directory")
 	caPath := flags.String("server-ca", "", "optional PEM for a private server CA")
-	local := flags.Bool("allow-insecure-local", false, "allow HTTP on loopback only for development")
+	local := flags.Bool("allow-insecure-local", false, "allow HTTP on loopback or private IPs for isolated development labs")
 	once := flags.Bool("once", false, "one management cycle")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return err
