@@ -1,0 +1,12 @@
+su -c '
+systemctl disable --now packetmotion-interface-names.service 2>/dev/null || true
+rm -f /etc/systemd/system/packetmotion-interface-names.service
+rm -f /etc/systemd/system/frr.service.d/10-packetmotion-interface-names.conf
+rm -f /etc/systemd/network/*packetmotion*.link
+sed -i -E "s/(^| )net.ifnames=0//g; s/(^| )biosdevname=0//g" /etc/default/grub
+update-grub 2>/dev/null || true
+systemctl daemon-reload
+reboot
+'
+
+----
