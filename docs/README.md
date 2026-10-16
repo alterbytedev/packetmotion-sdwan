@@ -16,6 +16,7 @@ Documentation has two audiences. Start at [AI agent guidance](agent/README.md) f
 - [Event-driven agent management ADR](adr/0003-event-driven-agent-management.md)
 - [Go agent development](../sdwan-edge/README.md)
 - [HTTPS/mTLS ingress](../deploy/proxy/README.md)
+- [TCP/UDP network communication matrix](operations/communication-matrix.md)
 
 - [Controller UI component architecture](development/ui-component-architecture.md)
 - [Runtime error troubleshooting](operations/runtime-error-troubleshooting.md)

@@ -20,6 +20,19 @@ function trustedProxyOrigin(request: Request): string | null {
   }
 }
 
+function developmentProxyOrigin(request: Request): string | null {
+  const protocol = request.headers.get('x-forwarded-proto');
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+  if ((protocol !== 'http' && protocol !== 'https') || !host || host.includes(',')) return null;
+  try {
+    const url = new URL(`${protocol}://${host}`);
+    if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 export async function operatorRequest(
   request: Request,
   mutation: boolean,
@@ -39,7 +52,12 @@ export async function operatorRequest(
       const expectedOrigin =
         process.env.CONTROLLER_PUBLIC_ORIGIN ||
         (process.env.NODE_ENV === 'production' ? null : developmentOrigin);
-      const acceptedOrigins = new Set([expectedOrigin, trustedProxyOrigin(request)].filter(Boolean));
+      const acceptedOrigins = new Set([
+        expectedOrigin,
+        process.env.NODE_ENV === 'production' ? null : developmentOrigin,
+        process.env.NODE_ENV === 'production' ? null : developmentProxyOrigin(request),
+        trustedProxyOrigin(request),
+      ].filter(Boolean));
       if (
         !acceptedOrigins.has(request.headers.get('origin')) ||
         request.headers.get('sec-fetch-site') === 'cross-site'

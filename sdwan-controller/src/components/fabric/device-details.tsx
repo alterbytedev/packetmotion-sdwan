@@ -1,35 +1,35 @@
 'use client';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   Activity,
-  ArrowLeft,
   Archive,
+  ArrowLeft,
   Clock3,
   Copy,
   Fingerprint,
+  Pencil,
   Radio,
   Router,
   ShieldCheck,
-  Pencil,
   X,
 } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { connectionStatusLabels } from '@/components/fabric/connection-status';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Feedback } from '@/components/ui/feedback';
-import { connectionStatusLabels } from '@/components/fabric/connection-status';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Modal, ModalFooter } from '@/components/ui/modal';
-import { LanSettings } from './lan-settings';
-import { WireguardConnections } from './wireguard-connections';
+import { formatDateTimeUtc, formatDateUtc } from '@/lib/date-format';
+import type { NodeRecord, OperatorRole } from '@/lib/fabric/types';
 import { AgentConfiguration } from './agent-configuration';
 import { AgentTelemetry } from './agent-telemetry';
-import { EnrollmentInstructions, type EnrollmentDetails } from './enrollment-details';
+import { type EnrollmentDetails, EnrollmentInstructions } from './enrollment-details';
+import { LanSettings } from './lan-settings';
 import { NetworkConfigurationPreview } from './network-configuration-preview';
-import type { NodeRecord, OperatorRole } from '@/lib/fabric/types';
-import { formatDateTimeUtc, formatDateUtc } from '@/lib/date-format';
+import { WireguardConnections } from './wireguard-connections';
 
 export function DeviceDetails({ node, role }: { node: NodeRecord; role: OperatorRole }) {
   const router = useRouter();
@@ -177,8 +177,8 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
       <section id={panelId(0)} role="tabpanel" aria-labelledby={tabId(0)} hidden={activeTab !== 0}>
         <Card className="overflow-hidden">
           <div className="h-1 bg-gradient-to-r from-primary via-primary/50 to-transparent" />
-          <CardHeader className="gap-5 pb-5 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 items-start gap-4">
+          <CardHeader className="gap-5 pb-5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+            <div className="flex min-w-0 flex-1 items-start gap-4">
               <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border bg-muted/50 text-primary">
                 {node.kind === 'hub' ? <Router aria-hidden="true" /> : <Radio aria-hidden="true" />}
               </div>
@@ -200,25 +200,32 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
                 </div>
               </div>
             </div>
-            {role !== 'viewer' && ['pending', 'enrolling'].includes(node.connectionStatus) && (
-              <Button disabled={pending} onClick={token} className="w-full shrink-0 sm:w-auto">
-                {pending
-                  ? 'Creating token…'
-                  : node.connectionStatus === 'enrolling'
-                    ? 'Reset enrollment'
-                    : 'Enroll device'}
-              </Button>
-            )}
             {role !== 'viewer' && (
-              <div className="flex shrink-0 flex-wrap gap-2">
+              <fieldset
+                className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:flex sm:flex-wrap sm:justify-end"
+                aria-label="Device actions"
+              >
+                {['pending', 'enrolling'].includes(node.connectionStatus) && (
+                  <Button
+                    disabled={pending}
+                    onClick={token}
+                    className="col-span-2 w-full sm:col-span-1 sm:w-auto"
+                  >
+                    {pending
+                      ? 'Creating token…'
+                      : node.connectionStatus === 'enrolling'
+                        ? 'Reset enrollment'
+                        : 'Enroll device'}
+                  </Button>
+                )}
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
                   onClick={() => {
                     setName(node.name);
                     setRenameOpen(true);
                   }}
+                  className="w-full sm:w-auto"
                 >
                   <Pencil aria-hidden="true" />
                   Rename
@@ -226,14 +233,14 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
                   disabled={pending}
                   onClick={() => setArchiveOpen(true)}
+                  className="w-full sm:w-auto"
                 >
                   <Archive aria-hidden="true" />
                   Archive device
                 </Button>
-              </div>
+              </fieldset>
             )}
           </CardHeader>
           <CardContent className="space-y-5">

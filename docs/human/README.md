@@ -25,6 +25,7 @@ This index groups the product and operational material for operators, reviewers,
 - [Selected hub WireGuard tunnels and local activation](../operations/wireguard-tunnels.md)
 - [Management communication and recovery](../operations/management-channel.md)
 - [Edge and Hub agent installation](../operations/agent-installation.md)
+- [TCP/UDP network communication matrix](../operations/communication-matrix.md)
 - [Runtime error troubleshooting](../operations/runtime-error-troubleshooting.md)
 - [Codebase map and maintenance guide](../development/codebase-map.md)
 - [Testing strategy](../development/testing-strategy.md)

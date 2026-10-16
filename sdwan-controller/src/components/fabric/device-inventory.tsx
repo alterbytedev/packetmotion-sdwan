@@ -1,18 +1,18 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { CircleHelp, CirclePlus, Radio, RefreshCw, Router, Search, Server, X } from 'lucide-react';
 import Link from 'next/link';
-import { CirclePlus, Search, Server, Router, Radio, RefreshCw, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { type FormEvent, useEffect, useState } from 'react';
+import { connectionStatusLabels } from '@/components/fabric/connection-status';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Feedback } from '@/components/ui/feedback';
-import { connectionStatusLabels } from '@/components/fabric/connection-status';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { EnrollmentInstructions, type EnrollmentDetails } from './enrollment-details';
 import type { Inventory, OperatorRole } from '@/lib/fabric/types';
+import { type EnrollmentDetails, EnrollmentInstructions } from './enrollment-details';
 
 export function DeviceInventory({ inventory, role }: { inventory: Inventory; role: OperatorRole }) {
   const router = useRouter();
@@ -22,6 +22,7 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
   const [error, setError] = useState('');
   const [enrollment, setEnrollment] = useState<EnrollmentDetails | null>(null);
   const [notice, setNotice] = useState('');
+  const [routingHelpOpen, setRoutingHelpOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [refresh, setRefresh] = useState(0);
@@ -166,7 +167,8 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
           </div>
         </div>
         <p className="mb-4 rounded-md bg-muted/50 px-3 py-2 text-xs leading-5 text-muted-foreground">
-          Management connection and configuration receipt are shown here. Network and tunnel health are unavailable.
+          Management connection and configuration receipt are shown here. Network and tunnel health
+          are unavailable.
         </p>
         {enrollment && (
           <EnrollmentInstructions enrollment={enrollment} onClose={() => setEnrollment(null)} />
@@ -200,11 +202,40 @@ export function DeviceInventory({ inventory, role }: { inventory: Inventory; rol
                 </Select>
               </div>
               <div className="space-y-2 text-sm">
-                <label htmlFor="device-mode">Routing mode</label>
+                <div className="flex items-center gap-1">
+                  <label htmlFor="device-mode">Routing mode</label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="size-8 p-0 text-muted-foreground hover:text-foreground"
+                    aria-label="About routing modes"
+                    aria-expanded={routingHelpOpen}
+                    aria-controls="device-routing-help"
+                    onClick={() => setRoutingHelpOpen((open) => !open)}
+                  >
+                    <CircleHelp aria-hidden="true" />
+                  </Button>
+                </div>
                 <Select id="device-mode" name="mode">
                   <option value="gateway">Gateway</option>
                   <option value="subnet-router">Subnet router</option>
                 </Select>
+                <div
+                  id="device-routing-help"
+                  hidden={!routingHelpOpen}
+                  className="rounded-md border bg-muted/40 p-3 text-xs leading-5 text-muted-foreground"
+                >
+                  <p>
+                    <strong className="text-foreground">Gateway:</strong> use this Edge as the
+                    site’s gateway for fabric traffic.
+                  </p>
+                  <p className="mt-1">
+                    <strong className="text-foreground">Subnet router:</strong> advertise the LAN so
+                    other sites can reach it.
+                  </p>
+                  <p className="mt-2">This records intent; it does not activate routing.</p>
+                </div>
               </div>
               <div className="space-y-2 text-sm">
                 <label htmlFor="device-prefix">LAN subnet (optional)</label>

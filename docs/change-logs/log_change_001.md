@@ -1055,3 +1055,53 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: none.
 - Risks/rollback: none introduced. Retain migration history and archived rows.
 - Next: none for the local development database; apply migrations through the CLI on other deployment targets.
+## NGINX-OPERATOR-ORIGIN-001 — 2026-10-15 — Codex /root
+
+- Status: implemented; automated checks not run in this turn.
+- Summary: operator mutation origin validation now accepts either the configured public origin or a matching HTTPS origin reconstructed from forwarded headers when the request carries the trusted NGINX proxy secret. Both proxy configurations overwrite the secret and public-origin headers for dashboard traffic. This allows operator device actions when the dashboard is opened through a DNS alias served by the configured proxy.
+- Files: `sdwan-controller/src/lib/fabric/http.ts`; `deploy/proxy/nginx.conf.template`; `deploy/proxy/setup-nginx.sh`; `deploy/proxy/README.md`; this log.
+- Checks: no tests or lint/typecheck were run in this turn.
+- UI/network impact: fixes operator mutations that otherwise returned “Same-origin request required” through NGINX aliases. Changes only HTTP headers between NGINX and Next.js; no device networking or UI appearance changes.
+- Risks: forwarded origin is accepted only with the configured proxy secret, HTTPS scheme, and a single valid forwarded host. NGINX must overwrite these headers and the upstream must remain private as documented.
+- Rollback: revert this source/proxy/documentation change; keep the existing fixed `CONTROLLER_PUBLIC_ORIGIN` behavior.
+- Next: deploy/reload the updated NGINX configuration and restart Next.js where applicable; verify the affected operator action through the deployed proxy.
+## DEV-OPERATOR-ORIGIN-002 — 2026-10-15 — Codex /root
+
+- Status: implemented; automated checks not run in this turn.
+- Summary: local `next dev` now accepts the configured public origin together with the current direct request origin and the HTTP(S) origin forwarded by a development proxy. This fixes operator POST actions when a stale configured origin points at another address, including access to `https://100.83.173.93` while the local setting names `https://192.168.160.200`. Production origin rules are unchanged.
+- Files: `sdwan-controller/src/lib/fabric/http.ts`; `deploy/proxy/README.md`; this log.
+- Checks: inspected `.env.local` origin without exposing the proxy secret; confirmed Next.js is running in development mode and NGINX is active. `git diff --check` PASS. No tests or lint/typecheck were run in this turn.
+- UI/network impact: allows same-origin device actions from the IP/hostname used to open the development dashboard. No device networking or visual behavior changes.
+- Risks: forwarded host/protocol fallback is enabled only in `next dev`; production still requires the configured origin or the authenticated HTTPS proxy headers.
+- Rollback: revert the development-only origin candidates and documentation update.
+- Next: reload the development controller if hot reload does not pick up the server helper change, then retry the action from the supplied URL.
+## DEVICE-OVERVIEW-ACTIONS-UI-001 — 2026-10-15 — Codex /root
+
+- Status: implemented; Biome check passed.
+- Summary: aligned device Overview actions into one responsive group. Enroll is full-width on narrow screens; Rename and Archive share a two-column row, and all actions use consistent button height. At larger widths the group aligns beside the device identity and wraps when space is limited.
+- Files: `sdwan-controller/src/components/fabric/device-details.tsx`; this log.
+- Checks: `npx biome check --write src/components/fabric/device-details.tsx` PASS; `git diff --check` PASS. No browser test or screenshot verification was run.
+- UI/network impact: changes only action layout in Device Overview; no behavior, permissions, or networking changes.
+- Risks: responsive visual appearance still needs review in the deployed browser at narrow and desktop widths.
+- Rollback: revert the DeviceDetails Overview header/action layout classes and markup.
+- Next: refresh the device page and review the action group at mobile and desktop widths.
+## ADD-DEVICE-ROUTING-HELP-001 — 2026-10-15 — Codex /root
+
+- Status: implemented; Biome and diff checks passed.
+- Summary: added an accessible question-mark button beside Routing mode in Add device. It expands concise explanations of Gateway and Subnet router and clarifies that the choice records intent without activating routing.
+- Files: `sdwan-controller/src/components/fabric/device-inventory.tsx`; this log.
+- Checks: `npx biome check --write src/components/fabric/device-inventory.tsx` PASS; `git diff --check` PASS. No browser test or screenshot verification was run.
+- UI/network impact: adds an inline disclosure to Add device; no routing behavior or device state changes.
+- Risks: visual fit in the live form has not been reviewed in a browser.
+- Rollback: remove the Routing mode disclosure state, button and help copy from DeviceInventory.
+- Next: verify the disclosure at desktop and mobile widths in the running controller.
+## NETWORK-COMMUNICATION-MATRIX-001 — 2026-10-15 — Codex /root
+
+- Status: documentation implemented and reviewed.
+- Summary: added a single TCP/UDP communication matrix covering operator HTTPS, agent HTTPS/mTLS, optional HTTP lab enrollment, private NGINX-to-Next.js and controller-to-PostgreSQL flows, configurable WireGuard UDP allocation, and pending/non-required BGP. Explicitly distinguishes project defaults from examples and records that device management is outbound and no inbound management listener is required.
+- Files: `docs/operations/communication-matrix.md`; `docs/README.md`; `docs/agent/README.md`; `docs/human/README.md`; this log.
+- Checks: source-reviewed against NGINX template/setup, `.env.example`, controller configuration, WireGuard UI/schema/plan, agent validation, and current status/evidence docs. `git diff --check` PASS. No application tests run (documentation-only).
+- UI/network impact: none; documentation only. No firewall or host configuration changed.
+- Risks: actual database/upstream endpoints and ACLs are deployment-specific; document states these as configurable. Future changes to routing activation may require updating the pending-port status.
+- Rollback: remove the new matrix and its index links; retain append-only log history.
+- Next: use the matrix for deployment firewall review and update it when new listeners or active protocols are introduced.
