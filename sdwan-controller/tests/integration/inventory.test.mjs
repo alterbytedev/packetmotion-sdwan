@@ -40,7 +40,7 @@ test('migration is repeatable, preserves credentials and detects modified applie
     before.rows,
   );
   const migrations = await pool.query('SELECT * FROM controller_migrations ORDER BY name');
-  assert.equal(migrations.rowCount, 7);
+  assert.equal(migrations.rowCount, 11);
   const original = migrations.rows[0].checksum;
   await pool.query(
     "UPDATE controller_migrations SET checksum = 'tampered' WHERE name = '0001_inventory_roles_audit.sql'",
@@ -131,6 +131,19 @@ test('inventory persists, is audited and is readable by viewer; viewer or missin
     inventory.createSite(admin, { name: 'test branch', mode: 'gateway' }),
     /already exists/,
   );
+});
+
+test('device rename validates names, enforces site uniqueness and records an audit event', async () => {
+  const site = await inventory.createSite(admin, { name: 'Rename network', mode: 'gateway' });
+  const node = await inventory.createNode(admin, { name: 'Old edge', siteId: site.id, kind: 'branch' });
+  const other = await inventory.createNode(admin, { name: 'Occupied name', siteId: site.id, kind: 'hub' });
+  const renamed = await inventory.renameNode(admin, node.id, { name: 'Renamed edge' });
+  assert.equal(renamed.name, 'Renamed edge');
+  assert.equal((await inventory.getDevice(admin, node.id)).name, 'Renamed edge');
+  await assert.rejects(inventory.renameNode(admin, node.id, { name: other.name }), (error) => error.status === 409);
+  await assert.rejects(inventory.renameNode(admin, node.id, { name: '  ' }), (error) => error.status === 400);
+  await assert.rejects(inventory.renameNode({ ...admin, role: 'viewer' }, node.id, { name: 'Denied' }), /Administrator/);
+  assert.equal((await pool.query("SELECT action FROM audit_events WHERE resource_id=$1 AND action='node.renamed'", [node.id])).rowCount, 1);
 });
 
 test('concurrent overlapping site creation has one winner across transactions', async () => {

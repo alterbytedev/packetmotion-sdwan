@@ -5,6 +5,21 @@ import { createRequestId, reportServerError } from '../diagnostics';
 
 const headers = { 'Cache-Control': 'no-store' };
 
+function trustedProxyOrigin(request: Request): string | null {
+  const secret = process.env.CONTROLLER_AGENT_PROXY_SECRET;
+  if (!secret || request.headers.get('x-fabric-proxy-secret') !== secret) return null;
+  const protocol = request.headers.get('x-forwarded-proto');
+  const host = request.headers.get('x-forwarded-host');
+  if (protocol !== 'https' || !host || host.includes(',')) return null;
+  try {
+    const url = new URL(`${protocol}://${host}`);
+    if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 export async function operatorRequest(
   request: Request,
   mutation: boolean,
@@ -24,9 +39,9 @@ export async function operatorRequest(
       const expectedOrigin =
         process.env.CONTROLLER_PUBLIC_ORIGIN ||
         (process.env.NODE_ENV === 'production' ? null : developmentOrigin);
+      const acceptedOrigins = new Set([expectedOrigin, trustedProxyOrigin(request)].filter(Boolean));
       if (
-        !expectedOrigin ||
-        request.headers.get('origin') !== expectedOrigin ||
+        !acceptedOrigins.has(request.headers.get('origin')) ||
         request.headers.get('sec-fetch-site') === 'cross-site'
       )
         throw new FabricError(403, 'Same-origin request required.');

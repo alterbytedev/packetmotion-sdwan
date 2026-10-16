@@ -1,12 +1,14 @@
 import 'server-only';
 import { createHash, randomBytes } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { lockTopology, detachWireguardNode } from './wireguard-plan';
 import { getDatabase } from '../db';
 import { FabricError } from './authorization';
 import { mutate } from './inventory';
 import { auditCreation } from './audit';
 import { signDeviceCertificate } from './pki';
 import type { Actor } from './types';
+import { nodeIdInput } from './validation';
 
 export async function issueToken(client: PoolClient, actor: Actor, nodeId: string) {
   const token = `pm_enroll_${randomBytes(32).toString('hex')}`;
@@ -43,6 +45,7 @@ export async function reissueEnrollment(actor: Actor | null, nodeId: string) {
 
 export async function revokeDevice(actor: Actor | null, nodeId: string) {
   return mutate(actor, async (client, fresh) => {
+    await lockTopology(client);
     const node = await client.query('UPDATE nodes SET revoked_at=now() WHERE id=$1 RETURNING id', [
       nodeId,
     ]);
@@ -51,8 +54,31 @@ export async function revokeDevice(actor: Actor | null, nodeId: string) {
     await client.query('UPDATE device_certificates SET revoked_at=now() WHERE node_id=$1', [
       nodeId,
     ]);
+    await detachWireguardNode(client, nodeId);
     await auditCreation(client, fresh, 'device.revoked', nodeId);
     return { revoked: true };
+  });
+}
+
+export async function archiveDevice(actor: Actor | null, nodeId: string) {
+  nodeIdInput(nodeId);
+  return mutate(actor, async (client, fresh) => {
+    await lockTopology(client);
+    const current = await client.query<{ archived_at: string | null }>(
+      'SELECT archived_at FROM nodes WHERE id=$1 FOR UPDATE', [nodeId],
+    );
+    if (!current.rowCount) throw new FabricError(404, 'Device not found.');
+    if (current.rows[0].archived_at) return { archived: true };
+    await client.query(
+      'UPDATE nodes SET archived_at=now(),revoked_at=COALESCE(revoked_at,now()) WHERE id=$1',
+      [nodeId],
+    );
+    await client.query('UPDATE enrollment_tokens SET revoked_at=COALESCE(revoked_at,now()) WHERE node_id=$1', [nodeId]);
+    await client.query('UPDATE device_certificates SET revoked_at=COALESCE(revoked_at,now()) WHERE node_id=$1', [nodeId]);
+    // Keep /31 and Hub-port reservations while withdrawing active peer plans.
+    await detachWireguardNode(client, nodeId);
+    await auditCreation(client, fresh, 'device.archived', nodeId);
+    return { archived: true };
   });
 }
 

@@ -36,7 +36,11 @@ Data: Linux IP forwarding and nftables over WireGuard encrypted branch-to-hub tu
 ```
 The diagram is conceptual, not an interface wiring plan. No direct branch-to-branch tunnel is required for MVP.
 
-## Requirements before config generation
+## Selected hub adjacency implementation
+
+Source 0.2.0 implements selectable Edge–Hub WireGuard /31 adjacencies behind a local activation gate, with namespace evidence. The default signed management service is unchanged. See [ADR 0004](../adr/0004-wireguard-adjacencies.md) for ownership/allocation and [operations](../operations/wireguard-tunnels.md) for activation/recovery. BGP, nftables and routed LAN forwarding remain planned.
+
+## Requirements before broader network configuration
 - Confirm real Debian, FRR, WireGuard, nftables versions and NIC inventory.
 - Design unique overlay addressing, peer endpoints and separate hub tunnel interfaces where appropriate.
 - Prove branch routes to both hub tunnel endpoints and valid return routes.

@@ -2,6 +2,8 @@ import { LogOut, Terminal } from 'lucide-react';
 import { logout } from '@/app/login/actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { RoutingSettings } from './routing-settings';
+import { TunnelSettings } from './tunnel-settings';
 import { BrandingSettings } from './branding-settings';
 import { InsecureHttpAllowlistSettings } from './insecure-http-allowlist-settings';
 import { OperatorManager } from './operator-manager';
@@ -67,6 +69,8 @@ export function ControllerSettings({
         </CardContent>
       </Card>
       {role !== 'viewer' && <div className="xl:col-span-2"><OperatorManager role={role} /></div>}
+      {isSuperadmin && <div className="xl:col-span-2"><RoutingSettings /></div>}
+      {isSuperadmin && <div className="xl:col-span-2"><TunnelSettings /></div>}
       {isSuperadmin && <div className="xl:col-span-2"><BrandingSettings /></div>}
       {isSuperadmin && <div className="xl:col-span-2"><InsecureHttpAllowlistSettings /></div>}
     </div>

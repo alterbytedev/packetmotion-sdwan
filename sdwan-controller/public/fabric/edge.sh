@@ -1,27 +1,33 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 set +x
-VERSION='0.1.2'
+VERSION='0.1.6'
 PUBLIC_KEY='-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAfhP9C+VjuVmj0Bq77IBhT2kZ6gBwrHUpWgYv2g8ESTM=
 -----END PUBLIC KEY-----'
 CONTROLLER=''
 ALLOW_LOCAL=0
+SERVER_CA_SHA256=''
+TOKEN_STDIN=0
 STATE_DIR=/var/lib/packetmotion
 BIN=/usr/local/bin/fabric-agent
 UNIT=/etc/systemd/system/fabric-agent.service
 WORK=''
 ENROLL_BIN=''
+ENROLL_CA=''
 fail() { printf 'PacketMotion installer: %s\n' "$1" >&2; exit 1; }
 cleanup() {
   [[ -z "$WORK" ]] || rm -rf -- "$WORK"
   [[ -z "$ENROLL_BIN" ]] || rm -f -- "$ENROLL_BIN"
+  [[ -z "$ENROLL_CA" ]] || rm -f -- "$ENROLL_CA"
 }
 trap cleanup EXIT
 while (($#)); do
   case "$1" in
     --controller) (($# >= 2)) || fail 'missing controller URL'; CONTROLLER=$2; shift 2 ;;
     --allow-insecure-local) ALLOW_LOCAL=1; shift ;;
+    --server-ca-sha256) (($# >= 2)) || fail 'missing server CA SHA-256 fingerprint'; SERVER_CA_SHA256=$2; shift 2 ;;
+    --token-stdin) TOKEN_STDIN=1; shift ;;
     *) fail 'unknown installer option' ;;
   esac
 done
@@ -36,7 +42,7 @@ esac
 CURL_PROTO=https
 TLS_ARGS=(--tlsv1.2)
 if [[ "$CONTROLLER" == http://* ]]; then CURL_PROTO=http; TLS_ARGS=(); fi
-for tool in curl openssl python3 sha256sum systemctl runuser useradd; do
+for tool in curl openssl python3 sha256sum systemctl runuser useradd update-ca-certificates; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     command -v apt-get >/dev/null 2>&1 || fail "required tool is missing: $tool"
     export DEBIAN_FRONTEND=noninteractive
@@ -45,7 +51,7 @@ for tool in curl openssl python3 sha256sum systemctl runuser useradd; do
     break
   fi
 done
-for tool in curl openssl python3 sha256sum systemctl runuser useradd; do command -v "$tool" >/dev/null 2>&1 || fail "required tool is missing: $tool"; done
+for tool in curl openssl python3 sha256sum systemctl runuser useradd update-ca-certificates; do command -v "$tool" >/dev/null 2>&1 || fail "required tool is missing: $tool"; done
 CONTROLLER=$(python3 - "$CONTROLLER" "$ALLOW_LOCAL" <<'PYURL'
 import sys
 from urllib.parse import urlsplit
@@ -63,11 +69,25 @@ if u.scheme == 'http' and (not private or sys.argv[2] != '1'):
 print(f'{u.scheme}://{u.netloc}')
 PYURL
 ) || fail 'controller must be a valid origin; HTTP requires --allow-insecure-local and a private or loopback IP'
+SERVER_CA_FILE=''
+if [[ "$CONTROLLER" == http://* && -z "$SERVER_CA_SHA256" ]]; then
+  if ! python3 - "$CONTROLLER" <<'PYLOOPBACK'
+import ipaddress,sys
+from urllib.parse import urlsplit
+host=urlsplit(sys.argv[1]).hostname
+try: loopback=ipaddress.ip_address(host).is_loopback
+except ValueError: loopback=host == 'localhost'
+raise SystemExit(0 if loopback else 1)
+PYLOOPBACK
+  then
+    fail 'private-IP HTTP lab enrollment requires --server-ca-sha256 so HTTPS management can be trusted automatically'
+  fi
+fi
 [[ -d /run/systemd/system ]] || fail 'systemd is required'
 ARCH=$(uname -m)
 case "$ARCH" in x86_64|amd64) GOARCH=amd64;; aarch64|arm64) GOARCH=arm64;; *) fail 'unsupported Linux architecture';; esac
 BASE=${CONTROLLER%/}/fabric/releases/$VERSION
-WORK=$(mktemp -d)
+[[ -n "$WORK" ]] || WORK=$(mktemp -d)
 chmod 0700 "$WORK"
 curl --fail --silent --show-error --location --max-filesize 4096 --proto "=$CURL_PROTO" "${TLS_ARGS[@]}" "$BASE/manifest.json" -o "$WORK/manifest.json" || fail 'unable to download release manifest'
 curl --fail --silent --show-error --location --max-filesize 1024 --proto "=$CURL_PROTO" "${TLS_ARGS[@]}" "$BASE/manifest.sig" -o "$WORK/manifest.sig" || fail 'unable to download manifest signature'
@@ -94,6 +114,27 @@ PYUNIT
 ) || fail 'service definition is not covered by the signed manifest'
 printf '%s  %s\n' "$EXPECTED" "$WORK/$ASSET" | sha256sum --check --status || fail 'agent binary checksum does not match signed manifest'
 printf '%s  %s\n' "$UNIT_HASH" "$WORK/fabric-agent.service" | sha256sum --check --status || fail 'service definition checksum does not match signed manifest'
+if [[ -n "$SERVER_CA_SHA256" ]]; then
+  EXPECTED_CA_SHA256=${SERVER_CA_SHA256//:/}
+  [[ "$EXPECTED_CA_SHA256" =~ ^[A-Fa-f0-9]{64}$ ]] || fail 'server CA fingerprint must be SHA-256 (64 hexadecimal characters)'
+  EXPECTED_CA_SHA256=${EXPECTED_CA_SHA256^^}
+  SERVER_CA_URL=$(python3 - "$CONTROLLER" <<'PYCAURL'
+import sys
+from urllib.parse import urlsplit, urlunsplit
+u=urlsplit(sys.argv[1])
+print(urlunsplit(('https',u.netloc,'/fabric/server-ca.crt','','')))
+PYCAURL
+)
+  curl --fail --silent --show-error --location --max-filesize 16384 --proto '=https' --tlsv1.2 --insecure "$SERVER_CA_URL" -o "$WORK/server-ca.crt" || fail 'unable to download pinned server CA over HTTPS'
+  openssl x509 -in "$WORK/server-ca.crt" -noout >/dev/null 2>&1 || fail 'downloaded server CA is not a valid PEM certificate'
+  openssl x509 -in "$WORK/server-ca.crt" -noout -text | grep -q 'CA:TRUE' || fail 'downloaded server certificate is not a CA certificate'
+  ACTUAL_CA_SHA256=$(openssl x509 -in "$WORK/server-ca.crt" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr '[:lower:]' '[:upper:]')
+  [[ "$ACTUAL_CA_SHA256" == "$EXPECTED_CA_SHA256" ]] || fail 'server CA fingerprint does not match the controller-provided pin'
+  SERVER_CA_FILE="$WORK/server-ca.crt"
+  install -o root -g root -m 0644 "$SERVER_CA_FILE" /usr/local/share/ca-certificates/packetmotion-fabric-server-ca.crt || fail 'unable to install pinned server CA'
+  update-ca-certificates >/dev/null || fail 'unable to update system CA trust store'
+  printf 'Controller server CA fingerprint verified and installed.\n'
+fi
 chmod 0755 "$WORK/$ASSET"
 "$WORK/$ASSET" version >/dev/null 2>&1 || fail 'downloaded agent binary failed its version check'
 if ! id packetmotion >/dev/null 2>&1; then
@@ -128,7 +169,9 @@ if [[ "$IDENTITY_STATE" == enrolled ]]; then
   printf 'PacketMotion agent upgraded and running.\n'
   exit 0
 fi
-if [[ -r /dev/tty ]]; then
+if [[ $TOKEN_STDIN -eq 1 ]]; then
+  IFS= read -r TOKEN || fail 'unable to read enrollment token from stdin'
+elif [[ -r /dev/tty ]]; then
   IFS= read -r -s -p 'Enrollment token: ' TOKEN </dev/tty || fail 'unable to read enrollment token'
   printf '\n' >/dev/tty
 else
@@ -137,6 +180,11 @@ fi
 [[ "$TOKEN" =~ ^pm_enroll_[a-f0-9]{64}$ ]] || { unset TOKEN; fail 'enrollment token format is invalid'; }
 ARGS=(enroll --controller "$CONTROLLER" --state-dir "$STATE_DIR")
 [[ $ALLOW_LOCAL -eq 0 ]] || ARGS+=(--allow-insecure-local)
+if [[ -n "$SERVER_CA_FILE" ]]; then
+  ENROLL_CA="$STATE_DIR/.fabric-server-ca-$$.crt"
+  install -o packetmotion -g packetmotion -m 0600 "$SERVER_CA_FILE" "$ENROLL_CA"
+  ARGS+=(--server-ca "$ENROLL_CA")
+fi
 ENROLL_BIN="$STATE_DIR/.fabric-agent-enroll-$$"
 install -o packetmotion -g packetmotion -m 0700 "$WORK/$ASSET" "$ENROLL_BIN"
 if ! printf '%s\n' "$TOKEN" | runuser -u packetmotion -- "$ENROLL_BIN" "${ARGS[@]}" >/dev/null; then unset TOKEN; fail 'enrollment failed; no service was enabled'; fi

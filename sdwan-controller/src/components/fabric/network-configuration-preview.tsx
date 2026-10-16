@@ -12,12 +12,10 @@ import type { NodeRecord, OperatorRole } from '@/lib/fabric/types';
 
 type Policy = { id: string; name: string; match: string; path: string; priority: string };
 type FirewallRule = { id: string; name: string; source: string; destination: string; service: string; action: 'Allow' | 'Deny' };
-type Interface = { id: string; name: string; role: string; addressing: string; address: string };
-type Section = 'topology' | 'interfaces' | 'policy' | 'firewall' | 'essentials';
+type Section = 'topology' | 'policy' | 'firewall' | 'essentials';
 
 const sectionTitles: Record<Section, string> = {
-  topology: 'Routing and hub preference',
-  interfaces: 'Interface and IP address',
+  topology: 'Routing preview',
   policy: 'Business policy',
   firewall: 'Firewall rule',
   essentials: 'Essential settings',
@@ -27,11 +25,6 @@ export function NetworkConfigurationPreview({ node, role }: { node: NodeRecord; 
   const [modal, setModal] = useState<Section | null>(null);
   const [previewed, setPreviewed] = useState(false);
   const [mode, setMode] = useState(node.kind === 'hub' ? 'hub' : 'gateway');
-  const [hub, setHub] = useState('Automatic selection');
-  const [interfaces, setInterfaces] = useState<Interface[]>([
-    { id: 'wan0', name: 'wan0', role: 'Internet uplink', addressing: 'DHCP', address: 'Assigned upstream' },
-    { id: 'lan0', name: 'lan0', role: 'Branch LAN', addressing: 'Static', address: '10.61.0.1/24' },
-  ]);
   const [policies, setPolicies] = useState<Policy[]>([
     { id: 'voice', name: 'Voice and video', match: 'VoIP · video conferencing', path: 'Preferred uplink', priority: 'High' },
     { id: 'business', name: 'Business applications', match: 'ERP · Microsoft 365 · CRM', path: 'Best quality', priority: 'Normal' },
@@ -52,10 +45,6 @@ export function NetworkConfigurationPreview({ node, role }: { node: NodeRecord; 
     const value = (key: string) => String(data.get(key) || '').trim();
     if (modal === 'topology') {
       setMode(value('mode'));
-      setHub(value('hub'));
-    } else if (modal === 'interfaces') {
-      const item = { id: value('name'), name: value('name'), role: value('role'), addressing: value('addressing'), address: value('address') };
-      setInterfaces((current) => [...current.filter((entry) => entry.id !== item.id), item]);
     } else if (modal === 'policy') {
       const item = { id: crypto.randomUUID(), name: value('name'), match: value('match'), path: value('path'), priority: value('priority') };
       setPolicies((current) => [...current, item]);
@@ -85,17 +74,15 @@ export function NetworkConfigurationPreview({ node, role }: { node: NodeRecord; 
           Changes stay in this browser preview. They are not saved, published, or applied to the device.
         </div>
 
-        <SummarySection icon={<Waypoints aria-hidden="true" />} title="Routing and hub preference" action={isAdmin ? <Button type="button" variant="ghost" size="sm" onClick={() => setModal('topology')}>Edit</Button> : undefined}>
+        <SummarySection icon={<Waypoints aria-hidden="true" />} title="Routing preview" action={isAdmin ? <Button type="button" variant="ghost" size="sm" onClick={() => setModal('topology')}>Edit</Button> : undefined}>
           <SummaryRow label="Operating mode" value={modeLabel(mode)} />
-          <SummaryRow label="Preferred hub" value={hub} />
-          <SummaryRow label="Advertised LAN" value="10.61.0.0/24" />
+          <SummaryRow label="Hub connections" value="Managed in the saved connections above" />
+          <SummaryRow label="Advertised LAN" value="Managed in the saved LAN profile above" />
           <SummaryRow label="Routing protocol" value="BGP IPv4 unicast" />
         </SummarySection>
 
-        <SummarySection icon={<Settings2 aria-hidden="true" />} title="Interfaces and IP addressing" action={isAdmin ? <Button type="button" variant="outline" size="sm" onClick={() => setModal('interfaces')}><Plus /> Add interface</Button> : undefined}>
-          <div className="divide-y rounded-lg border">
-            {interfaces.map((item) => <div key={item.id} className="grid gap-1 px-3 py-2.5 text-sm sm:grid-cols-[0.7fr_1fr_0.7fr_1.4fr] sm:items-center"><span className="font-medium">{item.name}</span><span className="text-muted-foreground">{item.role}</span><span>{item.addressing}</span><span className="break-all text-muted-foreground">{item.address}</span></div>)}
-          </div>
+        <SummarySection icon={<Settings2 aria-hidden="true" />} title="Interfaces and IP addressing">
+          <p className="text-xs leading-5 text-muted-foreground">Use the saved LAN network settings above. WAN and management addressing remain outside this preview.</p>
         </SummarySection>
 
         <SummarySection icon={<SlidersHorizontal aria-hidden="true" />} title="Business policy" action={isAdmin ? <Button type="button" variant="outline" size="sm" onClick={() => setModal('policy')}><Plus /> Add policy</Button> : undefined}>
@@ -129,15 +116,7 @@ export function NetworkConfigurationPreview({ node, role }: { node: NodeRecord; 
         {modal && <form key={modal} onSubmit={saveForm} className="space-y-4">
           {modal === 'topology' && <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Operating mode" htmlFor="modal-mode"><Select id="modal-mode" name="mode" defaultValue={mode}><option value="gateway">Gateway — WAN and LAN routing</option><option value="subnet-router">Subnet router — advertise a LAN</option><option value="hub">Hub — connect branch sites</option></Select></Field>
-            <Field label="Preferred hub" htmlFor="modal-hub"><Select id="modal-hub" name="hub" defaultValue={hub}><option>Automatic selection</option><option>Primary hub (example)</option><option>Secondary hub (example)</option></Select></Field>
-            <Field label="Advertised LAN prefix" htmlFor="modal-prefix"><Input id="modal-prefix" defaultValue="10.61.0.0/24" /></Field>
             <Field label="Routing protocol" htmlFor="modal-routing"><Select id="modal-routing" defaultValue="BGP IPv4 unicast" disabled><option>BGP IPv4 unicast</option></Select></Field>
-          </div>}
-          {modal === 'interfaces' && <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Interface name" htmlFor="interface-name"><Input id="interface-name" name="name" placeholder="e.g. lan1" required /></Field>
-            <Field label="Interface role" htmlFor="interface-role"><Select id="interface-role" name="role"><option>Branch LAN</option><option>Internet uplink</option><option>Management</option></Select></Field>
-            <Field label="Addressing" htmlFor="interface-addressing"><Select id="interface-addressing" name="addressing"><option>Static</option><option>DHCP</option></Select></Field>
-            <Field label="IP address / prefix" htmlFor="interface-address"><Input id="interface-address" name="address" placeholder="10.62.0.1/24" required /></Field>
           </div>}
           {modal === 'policy' && <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Policy name" htmlFor="policy-name"><Input id="policy-name" name="name" placeholder="Critical business apps" required /></Field>

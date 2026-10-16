@@ -61,7 +61,7 @@ try{
  const published=await operator(`/api/operator/nodes/${nodeId}/config`,{expectedRevision:0,pollIntervalSeconds:30});assert.equal(published.status,201);
  await run(binary,['run','--once','--state-dir',stateDirectory]);
  const received=await pool.query('SELECT status FROM config_acknowledgements WHERE node_id=$1',[nodeId]);assert.equal(received.rows[0].status,'received');
- const telemetry=await operator(`/api/operator/nodes/${nodeId}/telemetry`);assert.equal(telemetry.status,200);assert.equal(telemetry.body.telemetry.snapshot.agentVersion,'0.1.0');
+ const telemetry=await operator(`/api/operator/nodes/${nodeId}/telemetry`);assert.equal(telemetry.status,200);assert.equal(telemetry.body.telemetry.snapshot.agentVersion,execFileSync(binary,['version'],{encoding:'utf8'}).trim());
  const staged=JSON.parse(await readFile(join(stateDirectory,'desired.json'),'utf8'));assert.equal(staged.deviceKind,'branch');
  const persisted=JSON.parse(await readFile(join(stateDirectory,'identity.json'),'utf8'));
  const conditionalPath=`/api/agent/v1/desired?revision=${persisted.revision}&checksum=${persisted.checksum}`;
@@ -69,6 +69,20 @@ try{
  assert.equal(conditional.status,200);assert.equal(conditional.body.unchanged,true);assert.equal(conditional.body.payload,undefined);
  await run(binary,['run','--once','--state-dir',stateDirectory]);
  assert.equal(await readFile(join(stateDirectory,'identity.json'),'utf8'),JSON.stringify(persisted));
+
+ const liveAgent=spawn(binary,['run','--state-dir',stateDirectory],{env:process.env,stdio:['ignore','ignore','pipe']});processes.push(liveAgent);
+ await new Promise(resolveResult=>setTimeout(resolveResult,750));
+ const pushed=await operator(`/api/operator/nodes/${nodeId}/config`,{expectedRevision:1,pollIntervalSeconds:45});assert.equal(pushed.status,201);
+ const pushStarted=performance.now();let pushedAck=false;
+ for(let attempt=0;attempt<100;attempt++){
+  const ack=await pool.query('SELECT status FROM config_acknowledgements WHERE node_id=$1 AND revision=2',[nodeId]);
+  if(ack.rows[0]?.status==='received'){pushedAck=true;break;}
+  await new Promise(resolveResult=>setTimeout(resolveResult,100));
+ }
+ liveAgent.kill('SIGTERM');if(liveAgent.exitCode===null)await new Promise(resolveResult=>liveAgent.once('exit',resolveResult));
+ assert.ok(pushedAck,'agent did not receive the published revision through the long-poll');
+ assert.ok(performance.now()-pushStarted<10_000,'revision delivery exceeded the 10 second smoke budget');
+ processes.splice(processes.indexOf(liveAgent),1);
  const timings=[];const loadStarted=performance.now();
  await Promise.all(Array.from({length:8},async()=>{
   const connection=new https.Agent({ca:serverCA,cert:state.certificate,key:state.privateKey,keepAlive:true,maxSockets:1});

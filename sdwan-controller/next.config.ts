@@ -10,7 +10,7 @@ const interfaceDevOrigins = Object.values(networkInterfaces())
   .flatMap(({ address, family }) =>
     address.includes('%')
       ? []
-      : family === 'IPv6' || family === 6
+      : family === 'IPv6'
         ? [address, `[${address}]`]
         : [address],
   );

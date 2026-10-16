@@ -18,7 +18,7 @@ export async function database<T>(operation: (pool: pg.Pool) => Promise<T>): Pro
 export async function clearInventory() {
   await database(async (pool) => {
     await pool.query(
-      'DELETE FROM runtime_errors; DELETE FROM config_acknowledgements; DELETE FROM desired_configs; DELETE FROM device_telemetry; DELETE FROM device_certificates; DELETE FROM enrollment_tokens; DELETE FROM audit_events; DELETE FROM nodes; DELETE FROM sites',
+      'DELETE FROM wireguard_observed; DELETE FROM runtime_errors; DELETE FROM config_acknowledgements; DELETE FROM desired_configs; DELETE FROM device_telemetry; DELETE FROM device_certificates; DELETE FROM enrollment_tokens; DELETE FROM audit_events; DELETE FROM nodes; DELETE FROM sites',
     );
   });
 }

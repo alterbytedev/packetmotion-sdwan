@@ -14,6 +14,8 @@ import (
 )
 
 type State struct {
+	WireGuardEnabled       bool   `json:"-"`
+	WireGuardPublicKey     string `json:"wireguardPublicKey,omitempty"`
 	PendingAcknowledgement bool   `json:"pendingAcknowledgement"`
 	Checksum               string `json:"checksum"`
 	NodeID                 string `json:"nodeId"`

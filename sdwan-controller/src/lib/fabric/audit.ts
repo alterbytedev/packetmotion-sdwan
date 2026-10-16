@@ -11,7 +11,9 @@ export async function auditCreation(
     | 'enrollment.issued'
     | 'device.enrollment_reset'
     | 'device.revoked'
-    | 'config.published',
+    | 'config.published'
+    | 'node.renamed'
+    | 'device.archived',
   resourceId: string,
 ) {
   await client.query(

@@ -37,7 +37,15 @@
     ".next-isolated/types/**/*.ts",
     ".next-isolated/dev/types/**/*.ts",
     ".next-agent/types/**/*.ts",
-    ".next-agent/dev/types/**/*.ts"
+    ".next-agent/dev/types/**/*.ts",
+    ".next-wireguard-review/types/**/*.ts",
+    ".next-wireguard-review/dev/types/**/*.ts",
+    ".next-wireguard-final/types/**/*.ts",
+    ".next-wireguard-final/dev/types/**/*.ts",
+    ".next-wireguard-regression/types/**/*.ts",
+    ".next-wireguard-regression/dev/types/**/*.ts",
+    ".next-lan-m1/types/**/*.ts",
+    ".next-lan-m1/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

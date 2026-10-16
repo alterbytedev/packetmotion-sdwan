@@ -13,6 +13,7 @@ import (
 	"packetmotion/fabric-agent/internal/agent"
 	"packetmotion/fabric-agent/internal/controller"
 	"packetmotion/fabric-agent/internal/identity"
+	"packetmotion/fabric-agent/internal/network"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +38,7 @@ func execute() error {
 	directory := flags.String("state-dir", "/var/lib/packetmotion", "private state directory")
 	caPath := flags.String("server-ca", "", "optional PEM for a private server CA")
 	local := flags.Bool("allow-insecure-local", false, "allow HTTP on loopback or private IPs for isolated development labs")
+	wireguard := flags.Bool("enable-wireguard", false, "enable owned WireGuard interface apply (requires NET_ADMIN and isolated validation)")
 	once := flags.Bool("once", false, "one management cycle")
 	if err := flags.Parse(os.Args[2:]); err != nil {
 		return err
@@ -76,6 +78,13 @@ func execute() error {
 		if err != nil {
 			return errors.New("enroll this agent first")
 		}
+		state.WireGuardEnabled = *wireguard
+		if *wireguard {
+			engine := network.Engine{Directory: *directory, NodeID: state.NodeID}
+			if err = engine.Restore(ctx); err != nil {
+				return err
+			}
+		}
 		client, err := controller.New(state.AgentURL, state.ServerCA, state.Certificate, state.Key, state.AllowLocal)
 		if err != nil {
 			return err
@@ -95,25 +104,63 @@ func execute() error {
 		}
 		start := time.Now()
 		backoff := time.Second
+		heartbeatInterval := 30 * time.Second
+		nextHeartbeat := time.Now()
 		var pending *agent.Telemetry
 		for {
-			if pending == nil {
+			now := time.Now()
+			if pending == nil && !now.Before(nextHeartbeat) {
 				snapshot := agent.Snapshot(start)
 				pending = &snapshot
 			}
+			wait := 25 * time.Second
+			if pending == nil && nextHeartbeat.After(now) {
+				wait = nextHeartbeat.Sub(now)
+			}
+			if wait > 25*time.Second {
+				wait = 25 * time.Second
+			}
+			if wait > time.Second && !*once {
+				jitterMax := wait / 5
+				jitter, err := rand.Int(rand.Reader, big.NewInt(int64(jitterMax)+1))
+				if err == nil {
+					wait -= time.Duration(jitter.Int64())
+				}
+			}
+			if *once {
+				wait = 0
+			}
+			var heartbeatErr, configErr error
+			var interval time.Duration
+			sentHeartbeat := pending != nil
 			var renewalErr error
 			client, renewalErr = agent.Renew(ctx, client, &state, *directory)
-			interval, heartbeatErr, configErr := agent.Cycle(ctx, client, &state, *directory, *pending)
+			heartbeatAt := time.Now()
+			if pending != nil {
+				interval, heartbeatErr, configErr = agent.CycleWait(ctx, client, &state, *directory, *pending, wait)
+			} else {
+				interval, configErr = agent.ReconcileWait(ctx, client, &state, *directory, wait)
+			}
+			if interval > 0 {
+				heartbeatInterval = interval
+			}
 			if heartbeatErr == nil {
 				pending = nil
+				if sentHeartbeat && interval > 0 {
+					nextHeartbeat = heartbeatAt.Add(heartbeatInterval)
+				}
 			}
 			pollErr := errors.Join(heartbeatErr, configErr, renewalErr)
 			if *once {
 				return pollErr
 			}
+			if sentHeartbeat && heartbeatErr != nil {
+				nextHeartbeat = time.Now()
+			}
+			delay := time.Duration(0)
 			if pollErr != nil {
-				fmt.Fprintln(os.Stderr, "Management cycle failed; retrying. Existing network state is unchanged.")
-				interval = backoff
+				fmt.Fprintln(os.Stderr, "Management cycle failed; retrying. Check network observations and the local recovery journal.")
+				delay = backoff
 				backoff *= 2
 				if backoff > 60*time.Second {
 					backoff = 60 * time.Second
@@ -122,8 +169,10 @@ func execute() error {
 				pending = nil
 				backoff = time.Second
 			}
-			jitter, _ := rand.Int(rand.Reader, big.NewInt(int64(interval/5)+1))
-			delay := interval
+			if delay == 0 {
+				continue
+			}
+			jitter, _ := rand.Int(rand.Reader, big.NewInt(int64(delay/5)+1))
 			if jitter != nil {
 				delay += time.Duration(jitter.Int64())
 			}

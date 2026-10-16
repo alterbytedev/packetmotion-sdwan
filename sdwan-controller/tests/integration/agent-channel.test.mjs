@@ -88,6 +88,17 @@ test('token is hashed, expiring, one-use and binds signed certificate to registe
   await assert.rejects(auth.authenticateDevice(headers(serial)),/revoked/);
 });
 
+test('desired-state long-poll wakes on publish and returns the durable latest revision',async()=>{
+  const node=await inventory.createNode(actor,{name:'Long Poll Edge',kind:'branch',mode:'gateway'});
+  const initial=await channel.desiredConfig(node.id);
+  const waiting=channel.waitForDesiredConfig(node.id,'1',initial.checksum,2000,new AbortController().signal);
+  const published=await channel.publishConfig(actor,node.id,{expectedRevision:1,pollIntervalSeconds:45});
+  const delivered=await waiting;
+  assert.equal(delivered.revision,published.revision);
+  assert.equal(delivered.checksum,published.checksum);
+  assert.equal(delivered.payload.pollIntervalSeconds,45);
+});
+
 test('expired/replaced/revoked enrollment and viewer issuance fail without changing device identity',async()=>{
   const node=await inventory.createNode(actor,{name:'Pending Hub',kind:'hub',mode:'gateway'});
   await assert.rejects(enrollment.reissueEnrollment({...actor,role:'viewer'},node.id),/Administrator/);

@@ -1,0 +1,8 @@
+# Install only after isolated lab validation and management-route review.
+# The default management service remains unprivileged.
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/fabric-agent run --state-dir /var/lib/packetmotion --enable-wireguard
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

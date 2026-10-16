@@ -2,6 +2,8 @@
 
 Status: Accepted within Rama's enrollment/agent/channel request, 2026-10-12. Extends ADR 0001; Next.js remains the controller API.
 
+This ADR records the implemented periodic-polling baseline. ADR 0003 supersedes its decision to defer streaming for the next increment by accepting bounded long-poll synchronization; this ADR remains authoritative for enrollment, identity, acknowledgements, telemetry, and recovery contracts.
+
 ```mermaid
 sequenceDiagram
   participant O as Operator

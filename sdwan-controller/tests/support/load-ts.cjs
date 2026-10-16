@@ -23,7 +23,7 @@ module.exports = function loader(mocks = {}) {
         if (name.startsWith('.')) return load(resolve(dirname(absolute), `${name}.ts`));
         return require(name);
       },
-      process, Buffer, Date, Map, Request, Response, URL, URLSearchParams, TextDecoder, Uint8Array, console,
+      process, Buffer, Date, Map, Request, Response, URL, URLSearchParams, TextDecoder, Uint8Array, setTimeout, clearTimeout, console,
     }, { filename: absolute });
     return exports;
   }

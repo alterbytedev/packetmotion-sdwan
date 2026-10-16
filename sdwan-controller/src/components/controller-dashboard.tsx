@@ -314,7 +314,7 @@ export function ControllerDashboard({
           <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="mb-2 text-[10px] font-semibold tracking-[.15em] text-primary">
-                YOUR NETWORK AT A GLANCE
+                YOUR NETWORK AT A GLANCE 
               </p>
               <h1 className="text-2xl font-semibold tracking-tight sm:text-[28px]">
                 {view === 'overview' ? 'Network overview' : title}

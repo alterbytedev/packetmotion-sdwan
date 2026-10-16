@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+const maxResponseBytes = 64 * 1024
+
 type Client struct {
 	URL  string
 	HTTP *http.Client
@@ -68,8 +70,27 @@ func New(address, serverCA, cert, key string, allowLocal bool) (*Client, error) 
 		}
 		configuration.Certificates = []tls.Certificate{pair}
 	}
-	return &Client{URL: strings.TrimRight(address, "/"), HTTP: &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{TLSClientConfig: configuration, MaxIdleConns: 2, MaxIdleConnsPerHost: 2, MaxConnsPerHost: 2, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 10 * time.Second}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirects are not permitted") }}}, nil
+	transport := &http.Transport{
+		TLSClientConfig:       configuration,
+		MaxIdleConns:          2,
+		MaxIdleConnsPerHost:   2,
+		MaxConnsPerHost:       2,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	}
+	return &Client{
+		URL: strings.TrimRight(address, "/"),
+		HTTP: &http.Client{
+			Timeout:   35 * time.Second,
+			Transport: transport,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return errors.New("redirects are not permitted")
+			},
+		},
+	}, nil
 }
+
 func (c *Client) Request(ctx context.Context, method, path string, input, output any) error {
 	var body io.Reader
 	if input != nil {
@@ -91,11 +112,11 @@ func (c *Client) Request(ctx context.Context, method, path string, input, output
 		return errors.New("controller connection failed")
 	}
 	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, 65537))
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil {
 		return errors.New("controller response failed")
 	}
-	if len(data) > 65536 {
+	if len(data) > maxResponseBytes {
 		return errors.New("controller response too large")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {

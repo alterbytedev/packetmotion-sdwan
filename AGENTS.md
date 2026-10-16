@@ -1,5 +1,10 @@
 # PacketMotion Fabric — Repository Agent Rules
 
+## Guidance ownership
+- This file owns shared safety, scope and execution rules. Scoped `AGENTS.md` files add area-specific guidance; source documents own detailed behavior and procedures.
+- Start navigation with the [codebase map](docs/development/codebase-map.md), [agent index](docs/agent/README.md), and [human index](docs/human/README.md). Prefer links to authoritative guidance over duplicate status summaries.
+- For readability work, preserve contracts, transaction/lock order, serialized checksum inputs, recovery behavior and UI appearance. Use small cohesive extractions and review against the starting worktree.
+
 ## Mandatory startup
 1. Inspect the repository and git status; never overwrite user or other agent changes.
 2. Read `docs/agent/README.md` for the agent workflow, then consult the relevant source documents under `docs/` and `docs/human/README.md` for current product, architecture, operations, or status context.
@@ -14,7 +19,7 @@
 
 ## Engineering
 - Implement L3-first only: Next.js controller UI/API and Go edge/hub agents, PostgreSQL, Debian, WireGuard, FRRouting BGP IPv4, nftables.
-- The current delivered agent scope is management only: enrollment/mTLS, desired-revision retrieval and acknowledgement, certificate renewal, heartbeat and interface telemetry. Do not describe staged/received configuration as applied; network generation, privileged apply, rollback, tunnel/BGP health, and routed reachability are not implemented until code and evidence are added.
+- The default installed service and signed 0.1.6 release are management only: enrollment/mTLS, desired-revision retrieval and acknowledgement, certificate renewal, heartbeat and interface telemetry. Do not describe staged/received configuration as applied; source 0.2.0 adds locally gated owned WireGuard adjacency apply/recovery and handshake observations with isolated namespace evidence. Follow docs/operations/wireguard-tunnels.md and ADR 0004; the supplied Debian lab has handshake, tunnel-ping, reboot and controller-disconnection recovery evidence. An owned nftables guard blocks tunnel transit; general BGP/nftables policy, LAN forwarding, routed failover, NAT and production/fleet deployment remain UNVERIFIED/pending.
 - The controller is the existing Next.js application with server-only domain services and PostgreSQL. The shared agent is in `sdwan-edge/` and uses Go 1.27.2; there is no separate Go controller service.
 - Separate management, control and data planes. Forwarding must survive controller loss.
 - Do not implement EVPN, VXLAN, L2 extension, or speculative features.
@@ -22,11 +27,54 @@
 - Treat networking changes as hazardous: staged validation, management-path safety, last-known-good state, rollback and explicit lab-only destructive testing.
 - Never log secrets. Use scoped privileges and typed, validated agent operations.
 
+## Code Quality & Architecture Guardrails
+
+Apply these principles to every feature assessment, bug fix, refactoring, and implementation, within the approved scope and delivery and local network activation boundaries above.
+
+### Reuse before create
+- Search for existing functions, components, services, APIs, utilities, schemas, and contracts before adding new ones. Reuse or extend suitable implementations.
+- Keep shared business logic, validation, configuration handling, and state management authoritative in one place. Avoid parallel implementations.
+- Do not introduce an abstraction solely to eliminate a few similar lines; use the UI reuse policy below for components.
+
+### Architecture and state ownership
+- Follow existing naming, directories, dependency direction, and coding patterns. Keep UI, API, domain logic, persistence, and system/network operations separate; keep controller Route Handlers thin and domain services server-only.
+- Keep modules cohesive and independently testable, with explicit dependencies and predictable data flow. Avoid circular dependencies, unnecessary layers, and excessive indirection.
+- Distinguish desired configuration, staged/received revisions, and observed operational state. Define ownership of validation, configuration, and reconciliation; do not create competing authoritative state across controller, agent, database, and operating system.
+- Introduce a new architecture pattern only when existing patterns are demonstrably insufficient and the execution boundary permits the decision.
+
+### Minimal, readable changes
+- Make the smallest coherent change that fully meets the requirement. Avoid unrelated refactoring, formatting, dependency upgrades, and silent product behavior changes.
+- Preserve backward compatibility unless a breaking change is explicitly approved. Keep changes easy to review, troubleshoot, test, and revert.
+- Prefer simple, explicit code, clear names, focused functions, standard libraries, and existing dependencies. Centralize shared rules and configuration; avoid magic values and hidden side effects.
+- Explain non-obvious decisions in comments rather than narrating obvious code.
+
+### Reliability and network ownership
+- Make provisioning and reconciliation idempotent. Handle partial failures, retries, restarts, concurrent operations, and disconnected devices safely.
+- Validate configuration before applying it; preserve last-known-good state and provide meaningful errors and predictable recovery. These are requirements for future apply work, not evidence that apply or rollback exists today.
+- Prefer established Linux, WireGuard, FRRouting, and nftables capabilities over custom networking implementations. Avoid competing owners for the same interfaces, routes, firewall rules, or tunnels.
+- For approved network work, consider convergence, asymmetric routing, NAT, overlapping subnets, management-path safety, and failure scenarios. Keep changes observable, consistently staged, and operationally reversible, with isolated lab evidence.
+
+### Performance and resource efficiency
+- Avoid unnecessary polling, queries, API calls, and background processes; use the existing event-driven management mechanisms where appropriate.
+- Bound retries, concurrency, queues, and logging. Prevent goroutine and memory leaks; keep controller and agent resource use predictable.
+- Optimize measured bottlenecks rather than assumptions; do not add infrastructure or background services speculatively.
+
+### Validation and final self-review
+- Before implementation, identify reusable behavior, overlapping functionality, ownership, and the smallest safe integration point.
+- Test behavior, integration boundaries, configuration changes, and important failure/retry scenarios according to the risk-based testing policy below.
+- Review the final diff for duplicate logic/state, unnecessary complexity, unused imports, dead code, inconsistent naming, and accidental parallel implementations. Remove safely superseded code within the task scope; preserve unrelated work.
+- Before claiming completion, verify architecture consistency, clear responsibilities, failure/retry safety, troubleshooting through redacted diagnostics and observed state, and scoped, tested, reversible changes. Report untested scenarios, remaining risks, and technical debt introduced or discovered.
+- Prefer a simpler, equally reliable implementation whenever available.
+
+Core principle: Build the smallest correct, reusable, maintainable solution that fits the existing system; do not optimize for code quantity or architectural sophistication.
+
 ## Testing
 - Follow `docs/development/testing-strategy.md`. Risk-based, not every function.
-- Immediately run targeted tests after each critical change; integration/failure tests for real network behavior.
+- During each iteration, run the smallest relevant checks; immediately run targeted tests after each critical change. Documentation-only changes need diff review, logic/API changes need focused unit/integration tests, Go agent changes need relevant Go tests, and UI changes need checks of the affected page. Browser suites are not required after every edit.
+- At feature completion, targeted browser tests are required for changes to login, sessions, roles, navigation, or enrollment forms. Layout, CSS, and shared UI component changes require visual verification of affected views. Run broader regression checks according to impact at milestone completion or before merge/release; retain security, recovery, and isolated network integration/failure requirements.
+- Do not repeat passing checks unless subsequent changes, failures, or new evidence affect their validity. Record the checks run and reasons for skipping others; never treat manual page inspection as an automated browser test.
 - Available controller checks include `npm test`, `npm run test:integration`, `npm run test:browser`, `npm run test:visual`, `npm run test:agent`, lint, typecheck and build; use only checks relevant to the change. Available Go checks are listed in `sdwan-edge/AGENTS.md`. Network-plane claims require isolated VM/lab evidence.
-- Mark unrun tests UNVERIFIED. Bug fixes require regression tests where feasible.
+- Mark unrun tests and unproven behavior UNVERIFIED, with the reason; checks outside the change's scope need not be executed. Bug fixes require regression tests where feasible.
 
 ## Change management
 - Every meaningful task (including failed attempts that modified files) must append a concise record to `docs/change-logs/log_change_NNN.md`.

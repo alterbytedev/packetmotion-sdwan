@@ -6,22 +6,44 @@ import { getDatabase } from '../db';
 import { authorize, FabricError } from './authorization';
 import { auditCreation } from './audit';
 import { issueToken } from './enrollment';
-import { siteInput, nodeInput } from './validation';
+import { siteInput, nodeInput, nodeNameInput, nodeIdInput } from './validation';
 import type { Actor, Inventory, Site, NodeRecord } from './types';
 
 const siteColumns =
   'id, name, mode, lan_prefix::text AS "lanPrefix", created_at::text AS "createdAt"';
-const nodeColumns = `n.id, n.site_id AS "siteId", s.name AS "siteName", n.name, n.kind, n.created_at::text AS "createdAt", n.last_seen_at::text AS "lastSeenAt",
-  (SELECT dc.revision FROM desired_configs dc WHERE dc.node_id=n.id ORDER BY dc.revision DESC LIMIT 1) AS "configRevision",
-  CASE WHEN NOT EXISTS (SELECT 1 FROM desired_configs dc WHERE dc.node_id=n.id) THEN 'not-configured'
-       ELSE COALESCE((SELECT ca.status FROM config_acknowledgements ca WHERE ca.node_id=n.id AND ca.revision=(SELECT max(dc.revision) FROM desired_configs dc WHERE dc.node_id=n.id)), 'pending') END AS "configStatus",
-  CASE WHEN n.revoked_at IS NOT NULL THEN 'revoked'
+// Shared by list, detail and dashboard reads: receipt and heartbeat freshness
+// describe management connectivity, not successful network configuration apply.
+const nodeColumns = `
+  n.id, n.site_id AS "siteId", s.name AS "siteName", n.name, n.kind, n.created_at::text AS "createdAt", n.last_seen_at::text AS "lastSeenAt",
+  (SELECT dc.revision
+   FROM desired_configs dc
+   WHERE dc.node_id=n.id
+   ORDER BY dc.revision DESC LIMIT 1) AS "configRevision",
+  CASE
+       WHEN NOT EXISTS (SELECT 1 FROM desired_configs dc WHERE dc.node_id=n.id) THEN 'not-configured'
+       ELSE COALESCE(
+         (SELECT ca.status FROM config_acknowledgements ca
+          WHERE ca.node_id=n.id AND ca.revision=(
+            SELECT max(dc.revision) FROM desired_configs dc WHERE dc.node_id=n.id
+          )), 'pending')
+  END AS "configStatus",
+  CASE
+       WHEN n.revoked_at IS NOT NULL THEN 'revoked'
        WHEN n.enrolled_at IS NULL THEN 'pending'
        WHEN n.last_seen_at IS NULL THEN 'enrolling'
-       WHEN n.last_seen_at <= now()-make_interval(secs=>GREATEST(120,3*COALESCE((SELECT (dc.payload::jsonb->>'pollIntervalSeconds')::int FROM desired_configs dc WHERE dc.node_id=n.id ORDER BY dc.revision DESC LIMIT 1),30))) THEN 'offline'
+       WHEN n.last_seen_at <= now()-make_interval(secs=>GREATEST(120,3*COALESCE(
+         (SELECT (dc.payload::jsonb->>'pollIntervalSeconds')::int
+          FROM desired_configs dc WHERE dc.node_id=n.id
+          ORDER BY dc.revision DESC LIMIT 1),30))) THEN 'offline'
        WHEN NOT EXISTS (SELECT 1 FROM desired_configs dc WHERE dc.node_id=n.id) THEN 'syncing'
-       WHEN NOT EXISTS (SELECT 1 FROM config_acknowledgements ca WHERE ca.node_id=n.id AND ca.revision=(SELECT max(dc.revision) FROM desired_configs dc WHERE dc.node_id=n.id) AND ca.status='received') THEN 'syncing'
-       ELSE 'management-connected' END AS "connectionStatus"`;
+       WHEN NOT EXISTS (
+         SELECT 1 FROM config_acknowledgements ca
+         WHERE ca.node_id=n.id
+           AND ca.revision=(SELECT max(dc.revision) FROM desired_configs dc WHERE dc.node_id=n.id)
+           AND ca.status='received'
+       ) THEN 'syncing'
+       ELSE 'management-connected'
+  END AS "connectionStatus"`;
 
 export async function listInventory(actor: Actor | null): Promise<Inventory> {
   authorize(actor);
@@ -29,7 +51,7 @@ export async function listInventory(actor: Actor | null): Promise<Inventory> {
   const [sites, nodes] = await Promise.all([
     pool.query<Site>(`SELECT ${siteColumns} FROM sites ORDER BY name, id`),
     pool.query<NodeRecord>(
-      `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id = n.site_id ORDER BY s.name, n.name, n.id`,
+      `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id = n.site_id WHERE n.archived_at IS NULL ORDER BY s.name, n.name, n.id`,
     ),
   ]);
   return { sites: sites.rows, nodes: nodes.rows };
@@ -73,6 +95,14 @@ async function insertSite(
 ): Promise<Site> {
   await client.query('SELECT pg_advisory_xact_lock(72011002)');
   if (input.lanPrefix) {
+    const protectedOverlap = await client.query(
+      'SELECT 1 FROM routing_settings r CROSS JOIN unnest(r.protected_prefixes) p WHERE p && $1::cidr LIMIT 1', [input.lanPrefix],
+    );
+    if (protectedOverlap.rowCount) throw new FabricError(409, 'LAN overlaps a protected management or underlay network.');
+    const tunnelOverlap = await client.query(
+      'SELECT 1 FROM wireguard_settings WHERE pool && $1::cidr', [input.lanPrefix],
+    );
+    if (tunnelOverlap.rowCount) throw new FabricError(409, 'LAN prefix overlaps the tunnel address pool.');
     const overlap = await client.query(
       'SELECT id FROM sites WHERE lan_prefix && $1::cidr LIMIT 1',
       [input.lanPrefix],
@@ -165,7 +195,7 @@ export async function listDevices(
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const filter =
-      "WHERE n.name ILIKE $1 OR (CASE WHEN n.kind='hub' THEN 'Hub' ELSE 'Edge' END) ILIKE $1";
+      "WHERE n.archived_at IS NULL AND (n.name ILIKE $1 OR (CASE WHEN n.kind='hub' THEN 'Hub' ELSE 'Edge' END) ILIKE $1)";
     const count = await client.query<{ total: number }>(
       `SELECT count(*)::int AS total FROM nodes n ${filter}`,
       [pattern],
@@ -188,14 +218,28 @@ export async function listDevices(
 
 export async function getDevice(actor: Actor | null, id: string): Promise<NodeRecord> {
   authorize(actor);
-  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id))
-    throw new FabricError(404, 'Device not found.');
+  nodeIdInput(id);
   const result = await getDatabase().query<NodeRecord>(
-    `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id=n.site_id WHERE n.id=$1`,
+    `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id=n.site_id WHERE n.id=$1 AND n.archived_at IS NULL`,
     [id],
   );
   if (!result.rows[0]) throw new FabricError(404, 'Device not found.');
   return result.rows[0];
+}
+
+export async function renameNode(actor: Actor | null, nodeId: string, value: unknown) {
+  nodeIdInput(nodeId);
+  const name = nodeNameInput(value);
+  return mutate(actor, async (client, fresh) => {
+    const result = await client.query<Pick<NodeRecord, 'id' | 'siteId' | 'name' | 'kind'>>(
+      `UPDATE nodes SET name=$2 WHERE id=$1 AND archived_at IS NULL
+       RETURNING id,site_id AS "siteId",name,kind`,
+      [nodeId, name],
+    );
+    if (!result.rowCount) throw new FabricError(404, 'Device not found.');
+    await auditCreation(client, fresh, 'node.renamed', nodeId);
+    return result.rows[0];
+  });
 }
 
 export async function dashboardInventory(actor: Actor | null): Promise<Inventory> {

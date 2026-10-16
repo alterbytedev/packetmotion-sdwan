@@ -5,6 +5,7 @@ import { Feedback } from '@/components/ui/feedback';
 import { Select } from '@/components/ui/select';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import type { Inventory } from '@/lib/fabric/types';
+import { formatDateTimeUtc } from '@/lib/date-format';
 type Snapshot = {
   receivedAt: string;
   snapshot: {
@@ -90,7 +91,7 @@ export function AgentTelemetry({ inventory }: { inventory: Inventory }) {
                 <dl className="grid gap-4 text-sm sm:grid-cols-2">
                   <div>
                     <dt className="text-muted-foreground">Last received</dt>
-                    <dd className="mt-1">{new Date(sample.receivedAt).toLocaleString()}</dd>
+                    <dd className="mt-1">{formatDateTimeUtc(sample.receivedAt)}</dd>
                   </div>
                   <div>
                     <dt className="text-muted-foreground">Agent version</dt>
@@ -129,8 +130,8 @@ export function AgentTelemetry({ inventory }: { inventory: Inventory }) {
           </>
         )}
         <p className="text-xs leading-6 text-muted-foreground">
-          These are management-agent observations. Tunnel, BGP, and application reachability checks
-          are not available yet.
+          These are management-agent observations. Device details show separate WireGuard apply
+          and handshake reports. BGP and application reachability checks remain unavailable.
         </p>
       </CardContent>
     </Card>

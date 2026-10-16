@@ -25,6 +25,8 @@ http {
     location /api/agent/v1/ {
       if ($ssl_client_verify != SUCCESS) { return 403; }
       proxy_pass http://${CONTROLLER_UPSTREAM};
+      proxy_read_timeout 35s;
+      proxy_send_timeout 35s;
       proxy_set_header X-Fabric-Proxy-Secret ${PROXY_SECRET};
       proxy_set_header X-Fabric-Client-Serial $ssl_client_serial;
       proxy_set_header X-Fabric-Client-Verified $ssl_client_verify;
@@ -33,8 +35,9 @@ http {
     location / {
       proxy_pass http://${CONTROLLER_UPSTREAM};
       proxy_set_header Host $http_host;
+      proxy_set_header X-Forwarded-Host $http_host;
       proxy_set_header X-Forwarded-Proto https;
-      proxy_set_header X-Fabric-Proxy-Secret "";
+      proxy_set_header X-Fabric-Proxy-Secret ${PROXY_SECRET};
       proxy_set_header X-Fabric-Client-Serial "";
       proxy_set_header X-Fabric-Client-Verified "";
     }

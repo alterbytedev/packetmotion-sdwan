@@ -271,6 +271,8 @@ test('device table fetches bounded pages, searches across pages and opens scoped
       page.getByRole('button', { name: 'Publish configuration', exact: true }),
     ).toHaveCount(0);
     await expect(page.getByLabel('Check-in interval (seconds)', { exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Rename', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Archive device', exact: true })).toHaveCount(0);
     expect(
       (
         await page.request.post(`/api/operator/nodes/${target}/config`, {
@@ -286,6 +288,50 @@ test('device table fetches bounded pages, searches across pages and opens scoped
       ]);
     });
   }
+});
+
+test('device detail tabs support keyboard navigation, rename and archive', async ({ page }, info) => {
+  const target = await database(async (pool) => {
+    const site = (await pool.query(
+      "INSERT INTO sites(id,name,mode) VALUES(gen_random_uuid(),'Tabbed network','gateway') RETURNING id",
+    )).rows[0].id;
+    return (await pool.query(
+      "INSERT INTO nodes(id,site_id,name,kind) VALUES(gen_random_uuid(),$1,'Tabbed Edge','branch') RETURNING id",
+      [site],
+    )).rows[0].id;
+  });
+  await login(page);
+  await page.goto(`/dashboard/devices/${target}`);
+  await page.waitForLoadState('networkidle');
+  const tabs = page.getByRole('tablist', { name: 'Device details' });
+  const overview = tabs.getByRole('tab', { name: 'Overview' });
+  await expect(overview).toHaveAttribute('aria-selected', 'true');
+  await page.screenshot({ path: `test-results/device-detail-overview-${info.project.name}.png`, fullPage: true });
+  await overview.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(tabs.getByRole('tab', { name: 'Connections' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'Hub connections' })).toBeVisible();
+  await page.screenshot({ path: `test-results/device-detail-connections-${info.project.name}.png`, fullPage: true });
+  await page.keyboard.press('ArrowRight');
+  await expect(tabs.getByRole('tab', { name: 'Configuration' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: 'Agent configuration' })).toBeVisible();
+  await page.screenshot({ path: `test-results/device-detail-configuration-${info.project.name}.png`, fullPage: true });
+  await tabs.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByRole('button', { name: 'Rename', exact: true }).click();
+  await page.getByLabel('Device name', { exact: true }).fill('Renamed Tabbed Edge');
+  await page.getByRole('button', { name: 'Save name', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Renamed Tabbed Edge', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Archive device', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Archive device' });
+  await expect(dialog.getByText(/Audit history and reserved WireGuard addresses and ports are retained/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.getByRole('button', { name: 'Archive device', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Archive device' }).getByRole('button', { name: 'Archive device', exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/devices$/);
+  const activeInventory = await page.request.get('/api/operator/nodes?search=Renamed%20Tabbed%20Edge');
+  expect((await activeInventory.json()).total).toBe(0);
+  expect((await database(pool => pool.query('SELECT archived_at FROM nodes WHERE id=$1', [target]))).rows[0].archived_at).not.toBeNull();
 });
 
 test('device network preview adds firewall rules in an accessible modal without persisting them', async ({
@@ -309,6 +355,9 @@ test('device network preview adds firewall rules in an accessible modal without 
   await page.getByRole('button', { name: 'Add rule' }).click();
   const dialog = page.getByRole('dialog', { name: 'Firewall rule' });
   await expect(dialog).toBeVisible();
+  // The shared Modal focuses its first control: the header close button.
+  await expect(dialog.getByRole('button', { name: 'Close dialog', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(dialog.getByLabel('Rule name')).toBeFocused();
   await dialog.getByLabel('Rule name').fill('Allow ERP');
   await dialog.getByLabel('Action').selectOption({ label: 'Allow' });

@@ -10,6 +10,7 @@ export type EnrollmentDetails = {
   controllerUrl?: string | null;
   allowInsecureHttp?: boolean;
   insecureHttpBlocked?: boolean;
+  serverCaSha256?: string | null;
 };
 export function EnrollmentInstructions({
   enrollment,
@@ -24,6 +25,13 @@ export function EnrollmentInstructions({
   const origin = (enrollment.controllerUrl || '').replace(/\/$/, '');
   const local = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(origin);
   const allowHttp = local || enrollment.allowInsecureHttp;
+  const serverCaSha256 = enrollment.serverCaSha256 && /^[A-F0-9]{64}$/.test(enrollment.serverCaSha256)
+    ? enrollment.serverCaSha256
+    : null;
+  const needsServerCaPin = allowHttp && !local;
+  const installCommand = origin
+    ? `curl -fsSLo install.sh ${origin}/fabric/edge.sh && printf '%s\\n' '${enrollment.token}' | sudo bash install.sh --controller ${origin}${allowHttp ? ' --allow-insecure-local' : ''}${serverCaSha256 ? ` --server-ca-sha256 ${serverCaSha256}` : ''} --token-stdin`
+    : '';
   return (
     <section
       aria-label="Device enrollment"
@@ -72,16 +80,21 @@ export function EnrollmentInstructions({
       {origin ? (
         <>
           <p className="text-xs text-muted-foreground">
-            Run this on the Debian device. It downloads the installer from this Controller and
-            prompts for the one-time token without displaying it.
+            Copy and run this once on the Debian device. The one-time token is piped through
+            standard input and does not appear in shell history or process arguments.
           </p>
           {allowHttp && <p className="text-xs font-medium text-amber-800 dark:text-amber-300">HTTP is unencrypted. Use this only on an isolated, trusted lab network.</p>}
-          <code className="block break-all rounded-lg bg-muted p-3 text-xs">
-            curl -fsSLo install.sh {origin}/fabric/edge.sh &amp;&amp; sudo bash install.sh --controller {origin}{allowHttp ? ' --allow-insecure-local' : ''}
-          </code>
+          {needsServerCaPin && !serverCaSha256 ? (
+            <Feedback tone="error">A server CA fingerprint is not configured for this lab controller. Ask the controller administrator to finish the trusted enrollment setup before installing devices.</Feedback>
+          ) : (
+            <code className="block break-all rounded-lg bg-muted p-3 text-xs">
+              {installCommand}
+            </code>
+          )}
           <p className="text-xs text-muted-foreground">
-            The installer verifies the signed agent release and installs a systemd service. The
-            agent connects outbound; no inbound port is needed.
+            The installer verifies the signed agent release, pins and installs the controller CA
+            when configured, enrolls with the one-time token, and starts the systemd service. The agent connects outbound; no
+            inbound port is needed.
           </p>
         </>
       ) : (

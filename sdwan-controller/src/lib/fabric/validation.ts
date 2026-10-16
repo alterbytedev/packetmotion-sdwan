@@ -22,6 +22,17 @@ function name(value: unknown): string {
   return value.trim();
 }
 
+export function nodeNameInput(value: unknown): string {
+  const data = object(value, ['name']);
+  return name(data.name);
+}
+
+export function nodeIdInput(value: string): string {
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value))
+    throw new FabricError(404, 'Device not found.');
+  return value;
+}
+
 export function ipv4Prefix(value: unknown): string | null {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value !== 'string') throw new FabricError(400, 'LAN prefix must be IPv4 CIDR.');

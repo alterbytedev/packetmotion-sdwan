@@ -58,6 +58,39 @@ func TestReceivedConfigurationIsPersistedButNeverApplied(t *testing.T) {
 	}
 }
 
+func TestCycleWaitRequestsBoundedDesiredStateWait(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "state")
+	state := identity.State{NodeID: "node", Kind: "branch"}
+	payload := `{"schemaVersion":1,"deviceKind":"branch","mode":"gateway","lanPrefix":null,"pollIntervalSeconds":30}`
+	sum := sha256.Sum256([]byte(payload))
+	checksum := hex.EncodeToString(sum[:])
+	gotHeartbeat, gotWait, gotAck := false, "", false
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/agent/v1/heartbeat":
+			gotHeartbeat = true
+			w.Write([]byte(`{}`))
+		case "/api/agent/v1/desired":
+			gotWait = r.URL.Query().Get("wait")
+			if r.URL.Query().Get("revision") != "0" || gotWait != "7" {
+				t.Errorf("unexpected long-poll query: %s", r.URL.RawQuery)
+			}
+			fmt.Fprintf(w, `{"revision":1,"payload":%s,"checksum":"%s"}`, payload, checksum)
+		case "/api/agent/v1/ack":
+			gotAck = true
+			w.Write([]byte(`{}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client := &controller.Client{URL: server.URL, HTTP: server.Client()}
+	interval, heartbeatErr, configErr := CycleWait(context.Background(), client, &state, directory, Snapshot(time.Now()), 7*time.Second)
+	if heartbeatErr != nil || configErr != nil || !gotHeartbeat || gotWait != "7" || !gotAck || state.Revision != 1 || interval != 30*time.Second {
+		t.Fatalf("long-poll cycle failed: heartbeat=%v config=%v wait=%q ack=%v rev=%d interval=%s", heartbeatErr, configErr, gotWait, gotAck, state.Revision, interval)
+	}
+}
+
 func TestEnrollingAgainNeverOverwritesExistingOrUnsafeIdentity(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "state")
 	key, err := identity.CreateKey()
@@ -79,6 +112,25 @@ func TestEnrollingAgainNeverOverwritesExistingOrUnsafeIdentity(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(directory, "identity.json"))
 	if string(before) != string(after) {
 		t.Fatal("identity content changed")
+	}
+}
+
+func TestPendingEnrollmentCanRebindControllerWithoutReplacingKey(t *testing.T) {
+	key, err := identity.CreateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := identity.State{Key: key, Controller: "http://192.168.160.200:3000", AllowLocal: false}
+	updated, err := rebindPendingIdentity(state, "http://192.168.160.200", "new-ca", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Controller != "http://192.168.160.200" || updated.ServerCA != "new-ca" || updated.Key != key || updated.NodeID != "" || !updated.AllowLocal {
+		t.Fatalf("pending identity was not safely rebound: %+v", updated)
+	}
+	state.NodeID = "already-enrolled"
+	if _, err := rebindPendingIdentity(state, "http://192.168.160.200", "new-ca", true); err == nil {
+		t.Fatal("rebind accepted an enrolled identity")
 	}
 }
 
@@ -198,5 +250,79 @@ func TestRenewalFailurePreservesIdentity(t *testing.T) {
 	after, _ := os.ReadFile(filepath.Join(directory, "identity.json"))
 	if err == nil || next != client || state.Certificate != "old" || string(before) != string(after) {
 		t.Fatal("failed renewal replaced identity")
+	}
+}
+
+func TestWireguardReceiptDoesNotClaimApplyWithoutLocalOptIn(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "state")
+	payload := `{"schemaVersion":2,"deviceKind":"branch","mode":"gateway","lanPrefix":null,"pollIntervalSeconds":30,"wireguard":{"tunnels":[]}}`
+	sum := sha256.Sum256([]byte(payload))
+	checksum := hex.EncodeToString(sum[:])
+	state := identity.State{NodeID: "node", Kind: "branch"}
+	gotAck, gotDisabled := false, false
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/agent/v1/desired":
+			fmt.Fprintf(w, `{"revision":1,"payload":%s,"checksum":"%s"}`, payload, checksum)
+		case "/api/agent/v1/ack":
+			gotAck = true
+			w.Write([]byte(`{}`))
+		case "/api/agent/v1/wireguard-status":
+			var report struct {
+				Status   string `json:"status"`
+				Revision int    `json:"revision"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+				t.Error(err)
+			}
+			gotDisabled = report.Status == "disabled" && report.Revision == 1
+			w.Write([]byte(`{}`))
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	client := &controller.Client{URL: server.URL, HTTP: server.Client()}
+	if _, err := Reconcile(context.Background(), client, &state, directory); err != nil {
+		t.Fatal(err)
+	}
+	if !gotAck || !gotDisabled {
+		t.Fatal("receipt and network status were not separated")
+	}
+	if _, err := os.Stat(filepath.Join(directory, "network-applied.json")); !os.IsNotExist(err) {
+		t.Fatal("disabled agent attempted network apply")
+	}
+}
+
+func TestWireguardSchemaCannotEnableRoutedLAN(t *testing.T) {
+	directory := t.TempDir()
+	state := identity.State{Kind: "branch"}
+	payload := `{"schemaVersion":2,"deviceKind":"branch","mode":"gateway","lanPrefix":null,"pollIntervalSeconds":30,"wireguard":{"tunnels":[],"routing":{"lan":{"interfaceName":"ens34","address":"10.61.0.1/24","advertisedPrefix":"10.61.0.0/24"},"protectedPrefixes":["192.168.160.0/24"]}}}`
+	sum := sha256.Sum256([]byte(payload))
+	rejected := false
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/agent/v1/desired":
+			fmt.Fprintf(w, `{"revision":1,"payload":%s,"checksum":"%s"}`, payload, hex.EncodeToString(sum[:]))
+		case "/api/agent/v1/ack":
+			var ack struct {
+				Status string `json:"status"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&ack); err != nil {
+				t.Error(err)
+			}
+			rejected = ack.Status == "rejected"
+			w.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected endpoint %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	_, err := Reconcile(context.Background(), &controller.Client{URL: server.URL, HTTP: server.Client()}, &state, directory)
+	if err == nil || !rejected || state.Revision != 0 {
+		t.Fatal("schema 2 accepted routed configuration")
+	}
+	if _, err := os.Stat(filepath.Join(directory, "desired.json")); !os.IsNotExist(err) {
+		t.Fatal("unsupported configuration staged")
 	}
 }

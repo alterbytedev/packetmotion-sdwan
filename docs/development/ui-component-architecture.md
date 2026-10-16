@@ -33,7 +33,7 @@ Feedback renders a paragraph and owns announcement semantics and repeated styles
 
 Button adds `variant="unstyled"` for embedded controls and `size="icon-sm"` for an 18px icon footprint. These preserve the password toggle's existing geometry; use standard variants for ordinary actions.
 
-`connectionStatusLabels` is a typed fabric-local mapping for all four NodeRecord connection states. Consumers choose Badge or plain text; it does not change status calculation or controller/network meaning.
+`connectionStatusLabels` is a typed fabric-local mapping for all six NodeRecord connection states (`pending`, `enrolling`, `syncing`, `management-connected`, `offline`, `revoked`). Consumers choose Badge or plain text; it does not change status calculation or controller/network meaning.
 
 ## Validation and rollback
 
@@ -67,7 +67,7 @@ Dashboard screens use App Router paths: `/dashboard` (overview), `/dashboard/dev
 
 ## Reusable modal — 2026-10-14
 
-`components/ui/modal.tsx` exports `Modal` and `ModalFooter`. `Modal` requires controlled `open`, `onOpenChange`, and an accessible `title`; optional `description`, children, `size` (`sm`, `md`, `lg`, `xl`), backdrop/Escape behavior, close button visibility, and className customize each use. It renders an accessible modal dialog, traps Tab focus, focuses the first available control, locks body scrolling, and restores focus on close. Use for short focused workflows and compose existing form and button primitives inside. Keep long multi-step flows on a page. `ModalFooter` aligns actions responsively. The existing mobile navigation dialog remains specialized and unchanged. Roll back by removing this file and its documentation entry; no current feature depends on it.
+`components/ui/modal.tsx` exports `Modal` and `ModalFooter`. `Modal` requires controlled `open`, `onOpenChange`, and an accessible `title`; optional `description`, children, `size` (`sm`, `md`, `lg`, `xl`), backdrop/Escape behavior, close button visibility, and className customize each use. It renders an accessible modal dialog, traps Tab focus, focuses the first available control, locks body scrolling, and restores focus on close. Use for short focused workflows and compose existing form and button primitives inside. Keep long multi-step flows on a page. `ModalFooter` aligns actions responsively. The existing mobile navigation dialog remains specialized and unchanged. Roll back by removing this file and its documentation entry; feature consumers include the device network preview workflows documented below.
 
 ## Additional common primitives — 2026-10-14
 
@@ -80,3 +80,15 @@ Dashboard screens use App Router paths: `/dashboard` (overview), `/dashboard/dev
 ## White-label branding settings — 2026-10-14
 
 `components/fabric/branding-settings.tsx` is a superadmin-only feature component inside Controller Settings. It uploads/removes a raster logo, shows light/dark contrast previews, and explains the recommended 600 × 180 px size, accepted PNG/JPEG/WebP formats, 2 MiB limit, transparent image support, and contain-without-cropping behavior. `components/brand-logo.tsx` is the small shared display wrapper used on login and dashboard navigation; it keeps a default mark when no logo is configured. Branding writes are authorized server-side and the public read route exposes only this logo asset. No generic UI primitive or dependency was added.
+
+## Saved WireGuard connections — 2026-10-15
+
+`tunnel-settings.tsx` is a superadmin Settings card for the pool and optimistic version. `wireguard-connections.tsx` is a device-scoped card accepting `node` and `role`; Hub forms configure endpoint/base UDP port, Edge checkboxes select up to eight Hubs. Both reuse Card, Input, Button, Checkbox and Feedback. The device card separates saved allocations from timestamped/revision-scoped apply and handshake observations; periodic observation refresh preserves in-progress selections. No new shared primitive is introduced. The illustrative network preview no longer offers a competing fake hub selector; other preview fields remain local-only. See [operations](../operations/wireguard-tunnels.md).
+
+## Saved LAN profiles and protected networks
+
+`LanSettings` accepts `node` and `role`, and owns a device-scoped saved LAN profile form. It reuses Card, Input, Button and Feedback; viewers/revoked devices are read-only. `RoutingSettings` is a superadmin Settings card using Textarea for protected management/underlay CIDRs. Both use optimistic versions and server validation. The illustrative network preview no longer edits LAN interfaces or advertised prefixes; its remaining fields remain local examples. See [routed LAN delivery](../operations/routed-lan.md) for activation limits.
+
+## Device detail tabs and lifecycle actions
+
+`DeviceDetails` groups the existing identity/status/enrollment view, WireGuard and LAN connections, agent/network configuration, and telemetry into keyboard-operable tabs. Each section remains mounted while another tab is selected so in-progress configuration state is preserved. Admins can rename the current device or archive it from Overview; viewers retain read-only access. Archive confirmation states that credentials are revoked and peer plans withdrawn while audit history and WireGuard reservations remain. A disconnected appliance may retain local tunnel state until local cleanup. Migration 0011 adds the archive marker and `node.renamed` / `device.archived` audit actions. No shared Tabs component is introduced.

@@ -121,31 +121,158 @@
     "/api/operator/operators": {
       "get": {
         "operationId": "listOperators",
-        "security": [{"operatorSession": []}],
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
         "description": "Admin and superadmin only. Lists operator email addresses, roles, and creation dates.",
-        "responses": {"200": {"description": "Operator accounts."}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}
+        "responses": {
+          "200": {
+            "description": "Operator accounts."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       },
       "post": {
         "operationId": "createOperator",
-        "security": [{"operatorSession": []}],
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
         "description": "Requires exact same-origin Origin. Superadmins may create admins or viewers; admins may create viewers only. Returns a generated password once.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["email"], "properties": {"email": {"type": "string", "format": "email", "maxLength": 254}, "role": {"type": "string", "enum": ["admin", "viewer"]}}}}}},
-        "responses": {"201": {"description": "Operator created; includes the generated password exactly once."}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "409": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 254
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "viewer"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Operator created; includes the generated password exactly once."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/api/operator/controller-settings/insecure-http-hosts": {
       "get": {
         "operationId": "getInsecureHttpHosts",
-        "security": [{"operatorSession": []}],
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
         "description": "Superadmin only. Returns the private controller IPs that may be shown in HTTP lab enrollment commands.",
-        "responses": {"200": {"description": "Configured host allowlist."}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}
+        "responses": {
+          "200": {
+            "description": "Configured host allowlist."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       },
       "put": {
         "operationId": "replaceInsecureHttpHosts",
-        "security": [{"operatorSession": []}],
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
         "description": "Superadmin only; exact same-origin JSON request. Allows at most 64 private IPv4/IPv6 or loopback addresses. The list controls generated UI instructions; HTTP remains unencrypted and is for isolated labs only.",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "required": ["hosts"], "properties": {"hosts": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "format": "ip"}}}}}}},
-        "responses": {"201": {"description": "Allowlist replaced."}, "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"}, "503": {"$ref": "#/components/responses/Error"}}
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "hosts"
+                ],
+                "properties": {
+                  "hosts": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "format": "ip"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Allowlist replaced."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/api/operator/sites": {
@@ -542,7 +669,7 @@
             "deviceCertificate": []
           }
         ],
-        "description": "Identity/node scope comes from mTLS; no caller-selected node ID. Optional revision and checksum return an unchanged marker only when both match; older clients continue receiving the complete payload.",
+        "description": "Identity/node scope comes from mTLS; no caller-selected node ID. Optional revision and checksum return an unchanged marker only when both match; wait holds the authenticated request for up to 25 seconds and returns promptly when a newer durable revision is published. Older clients continue receiving the complete payload.",
         "responses": {
           "200": {
             "description": "Accepted",
@@ -593,7 +720,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 0
             }
           },
           {
@@ -603,6 +730,17 @@
             "schema": {
               "type": "string",
               "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "required": false,
+            "description": "Maximum desired-revision wait in seconds. The server caps waits at 25 seconds.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25
             }
           }
         ]
@@ -756,6 +894,68 @@
           "503": {
             "$ref": "#/components/responses/Error"
           }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": { "type": "string", "format": "uuid" }
+        }
+      ],
+      "patch": {
+        "operationId": "renameOperatorDevice",
+        "security": [{ "operatorSession": [] }],
+        "description": "Admin only; same-origin Origin, JSON and 8192-byte limit required. Renames an active Edge or Hub; the name must be unique within its site.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name"],
+                "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 100 } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Device renamed." },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "delete": {
+        "operationId": "archiveOperatorDevice",
+        "security": [{ "operatorSession": [] }],
+        "description": "Admin only; same-origin Origin required. Archives an Edge or Hub, revokes its credentials, and withdraws active peer plans. Audit history and WireGuard address/port reservations are retained. Local tunnel state on a disconnected device may persist until local cleanup.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Device archived." },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
         }
       }
     },
@@ -1078,6 +1278,497 @@
           }
         }
       }
+    },
+    "/api/operator/controller-settings/tunnels": {
+      "get": {
+        "operationId": "readTunnelSettings",
+        "description": "Signed-in operator read. Returns pool and optimistic version; empty pool/version 0 until configured.",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved or retrieved successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveTunnelSettings",
+        "description": "Superadmin only. Same-origin JSON. Rejects stale version, LAN/endpoint overlaps and pool changes with existing reservations.",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Saved or retrieved successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TunnelSettingsInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}/wireguard": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readWireguardDevice",
+        "description": "Operator read: node kind/publicKey/endpoint/basePort/version/revoked, available hubs, active links with assigned /31 addresses/ports, desiredRevision and latest timestamped observed status. Older observations remain visible with their revision.",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved or retrieved successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveWireguardDevice",
+        "description": "Admin/superadmin only. Same-origin JSON. Hubs configure endpoint/base port; Edges select up to eight active keyed hubs. Atomically reserves stable /31s and ports, audits selection and publishes both peers. Removed links retain reservations. Returns saved and version.",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Saved or retrieved successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/WireguardHubInput"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WireguardEdgeInput"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/v1/wireguard-key": {
+      "post": {
+        "operationId": "registerWireguardKey",
+        "description": "Authenticated mTLS device registers its own public key; idempotent same-key retry. Replacement and duplicate identity keys are rejected. Private keys never leave the agent.",
+        "security": [
+          {
+            "deviceCertificate": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved or retrieved successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "publicKey"
+                ],
+                "properties": {
+                  "publicKey": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9+/]{43}=$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/v1/wireguard-status": {
+      "post": {
+        "operationId": "reportWireguardStatus",
+        "description": "Authenticated mTLS device reports local apply separately from received/rejected acknowledgements. Must match latest revision/checksum and exact tunnel names. Applied requires an entry for every tunnel; disabled/failed require empty handshakes. Records latest status and receipt timestamp. No reachability claim.",
+        "security": [
+          {
+            "deviceCertificate": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved or retrieved successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WireguardStatusInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/operator/controller-settings/routing": {
+      "get": {
+        "operationId": "readRoutingSettings",
+        "description": "Signed-in operator read. Returns protectedPrefixes and version (empty/version 0 until configured).",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved or read successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveRoutingSettings",
+        "description": "Superadmin only. Same-origin bounded JSON. Protects management and underlay networks against LAN/tunnel allocation. Rejects overlaps and stale versions; audits transaction.",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Saved or read successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtectedNetworksInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}/lan": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "readLanProfile",
+        "description": "Operator read. Returns interfaceName, address, advertisedPrefix, sitePrefix, version, revoked and protectedPrefixes.",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Saved or read successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveLanProfile",
+        "description": "Admin/superadmin only. Same-origin JSON. Saves LAN intent and site prefix atomically with audit. Rejects protected/tunnel/other-site overlaps, conflicting shared-site addressing and stale versions. Does not publish or apply networking in milestone 1.",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Saved or read successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LanProfileInput"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1281,12 +1972,24 @@
             ]
           },
           "configRevision": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "description": "Latest desired revision; receipt acknowledgement is not network application."
           },
           "configStatus": {
-            "type": ["string", "null"],
-            "enum": ["pending", "received", "rejected", "not-configured", null]
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "pending",
+              "received",
+              "rejected",
+              "not-configured",
+              null
+            ]
           },
           "lastSeenAt": {
             "type": [
@@ -1318,6 +2021,19 @@
               "string",
               "null"
             ]
+          },
+          "allowInsecureHttp": {
+            "type": "boolean"
+          },
+          "insecureHttpBlocked": {
+            "type": "boolean"
+          },
+          "serverCaSha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-F0-9]{64}$"
           }
         }
       },
@@ -1393,7 +2109,10 @@
         "properties": {
           "schemaVersion": {
             "type": "integer",
-            "const": 1
+            "enum": [
+              1,
+              2
+            ]
           },
           "deviceKind": {
             "type": "string",
@@ -1419,8 +2138,34 @@
             "type": "integer",
             "minimum": 10,
             "maximum": 300
+          },
+          "wireguard": {
+            "$ref": "#/components/schemas/WireguardPlan"
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "schemaVersion": {
+                  "const": 2
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "wireguard"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "wireguard"
+                ]
+              }
+            }
+          }
+        ]
       },
       "Desired": {
         "type": "object",
@@ -1550,15 +2295,257 @@
         "properties": {
           "revision": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 0
           },
           "checksum": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "pattern": "^[a-f0-9]{64}$"
           },
           "unchanged": {
             "type": "boolean",
             "const": true
+          }
+        }
+      },
+      "WireguardTunnel": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "address",
+          "peerAddress",
+          "publicKey",
+          "endpoint",
+          "listenPort",
+          "keepalive"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^pm[0-9a-f]{12}$"
+          },
+          "address": {
+            "type": "string",
+            "description": "Private local IPv4 address with /31 prefix."
+          },
+          "peerAddress": {
+            "type": "string",
+            "format": "ipv4"
+          },
+          "publicKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/]{43}=$"
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Edge: IPv4:UDP-port; Hub: null (learn authenticated peer endpoint)."
+          },
+          "listenPort": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "keepalive": {
+            "type": "integer",
+            "enum": [
+              0,
+              25
+            ]
+          }
+        }
+      },
+      "WireguardPlan": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tunnels"
+        ],
+        "properties": {
+          "tunnels": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "$ref": "#/components/schemas/WireguardTunnel"
+            }
+          }
+        }
+      },
+      "TunnelSettingsInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "pool",
+          "expectedVersion"
+        ],
+        "properties": {
+          "pool": {
+            "type": "string",
+            "description": "Unused RFC1918 canonical IPv4 CIDR with prefix length 16\u201330. Once reservations exist, changes require an explicit migration."
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        }
+      },
+      "WireguardHubInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "endpoint",
+          "basePort",
+          "expectedVersion"
+        ],
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "ipv4"
+          },
+          "basePort": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65408
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        }
+      },
+      "WireguardEdgeInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "hubIds",
+          "expectedVersion"
+        ],
+        "properties": {
+          "hubIds": {
+            "type": "array",
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          }
+        }
+      },
+      "WireguardStatusInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "checksum",
+          "status",
+          "handshakes"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "checksum": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "applied",
+              "failed"
+            ]
+          },
+          "handshakes": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "lastHandshake"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^pm[0-9a-f]{12}$"
+                },
+                "lastHandshake": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Unix seconds; 0 means no handshake observed. Must not exceed controller time by more than 300 seconds."
+                }
+              }
+            }
+          }
+        }
+      },
+      "LanProfileInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "interfaceName",
+          "address",
+          "advertisedPrefix"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "interfaceName": {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]{0,14}$",
+            "description": "Physical LAN interface; loopback and pm interfaces rejected. Agent preflight must separately protect its actual management interface."
+          },
+          "address": {
+            "type": "string",
+            "description": "Private IPv4 host/prefix 8\u201330; network/broadcast host addresses rejected."
+          },
+          "advertisedPrefix": {
+            "type": "string",
+            "description": "Canonical IPv4 subnet; must exactly match the address network."
+          }
+        }
+      },
+      "ProtectedNetworksInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "protectedPrefixes"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "protectedPrefixes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "description": "Canonical unicast IPv4 CIDR."
+            }
           }
         }
       }

@@ -133,8 +133,8 @@ export function AgentConfiguration({
           </>
         )}
         <p className="text-xs leading-6 text-muted-foreground">
-          This configures the management agent. WireGuard, routing, and firewall changes are not
-          applied by this MVP.
+          This changes the check-in interval and preserves saved hub connections. WireGuard apply
+          requires the local agent opt-in; LAN routing and firewall policy are not configured here.
         </p>
       </CardContent>
     </Card>

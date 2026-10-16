@@ -101,6 +101,7 @@ chmod 0600 "$SECRET_FILE"
 PROXY_SECRET=$(cat "$SECRET_FILE")
 [[ "$PROXY_SECRET" =~ ^[a-f0-9]{64,}$ ]] || { echo 'Existing proxy secret is invalid.' >&2; exit 1; }
 install -o root -g root -m 0644 "$SERVER_CA" "$PUBLIC_CA"
+FINGERPRINT=$(openssl x509 -in "$SERVER_CA" -noout -fingerprint -sha256 | cut -d= -f2)
 
 for file in "$SITE" "$LIMITS"; do
   if [[ -e "$file" ]] && ! grep -q '^# Managed by PacketMotion Fabric setup-nginx.sh$' "$file"; then
@@ -117,6 +118,46 @@ limit_req_zone $binary_remote_addr zone=packetmotion_enrollment:10m rate=5r/s;
 EOF
 cat > "$SITE_TMP" <<EOF
 # Managed by PacketMotion Fabric setup-nginx.sh
+server {
+  listen 80;
+  listen [::]:80;
+  server_name $HOST;
+  access_log off;
+  client_max_body_size 32k;
+  client_body_timeout 15s;
+
+  location = /fabric/edge.sh {
+    limit_req zone=packetmotion_enrollment burst=5 nodelay;
+    proxy_pass http://$UPSTREAM;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-Proto http;
+    proxy_set_header X-Fabric-Proxy-Secret $PROXY_SECRET;
+    proxy_set_header X-Fabric-Client-Serial "";
+    proxy_set_header X-Fabric-Client-Verified "";
+    proxy_set_header Cookie "";
+  }
+  location ^~ /fabric/releases/ {
+    proxy_pass http://$UPSTREAM;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-Proto http;
+    proxy_set_header X-Fabric-Proxy-Secret "";
+    proxy_set_header X-Fabric-Client-Serial "";
+    proxy_set_header X-Fabric-Client-Verified "";
+    proxy_set_header Cookie "";
+  }
+  location = /api/agent/v1/enroll {
+    limit_req zone=packetmotion_enrollment burst=5 nodelay;
+    proxy_pass http://$UPSTREAM;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-Proto http;
+    proxy_set_header X-Fabric-Proxy-Secret $PROXY_SECRET;
+    proxy_set_header X-Fabric-Client-Serial "";
+    proxy_set_header X-Fabric-Client-Verified "";
+    proxy_set_header Cookie "";
+  }
+  location / { return 404; }
+}
+
 server {
   listen 443 ssl;
   server_name $HOST;
@@ -147,6 +188,8 @@ server {
   location /api/agent/v1/ {
     if (\$ssl_client_verify != SUCCESS) { return 403; }
     proxy_pass http://$UPSTREAM;
+    proxy_read_timeout 35s;
+    proxy_send_timeout 35s;
     proxy_set_header Host \$host;
     proxy_set_header X-Forwarded-Proto https;
     proxy_set_header X-Fabric-Proxy-Secret $PROXY_SECRET;
@@ -163,7 +206,7 @@ server {
     proxy_set_header X-Forwarded-Host \$host;
     proxy_set_header X-Forwarded-Proto https;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Fabric-Proxy-Secret "";
+    proxy_set_header X-Fabric-Proxy-Secret $PROXY_SECRET;
     proxy_set_header X-Fabric-Client-Serial "";
     proxy_set_header X-Fabric-Client-Verified "";
   }
@@ -176,7 +219,7 @@ ln -sfn "$SITE" "$LINK"
 nginx -t
 
 cp -p "$ENV_FILE" "$ENV_FILE.before-nginx-$(date +%Y%m%d%H%M%S)"
-PROXY_SECRET="$PROXY_SECRET" ORIGIN="https://$HOST" DEVICE_CERT="$DEVICE_CERT" DEVICE_KEY="$DEVICE_KEY" \
+PROXY_SECRET="$PROXY_SECRET" ORIGIN="https://$HOST" DEVICE_CERT="$DEVICE_CERT" DEVICE_KEY="$DEVICE_KEY" SERVER_CA_SHA256="$FINGERPRINT" \
 python3 - "$ENV_FILE" <<'PY'
 import os, re, sys
 path=sys.argv[1]
@@ -187,6 +230,7 @@ values={
  "CONTROLLER_AGENT_PROXY_SECRET":os.environ["PROXY_SECRET"],
  "CONTROLLER_DEVICE_CA_CERT":os.environ["DEVICE_CERT"],
  "CONTROLLER_DEVICE_CA_KEY":os.environ["DEVICE_KEY"],
+ "CONTROLLER_AGENT_CA_SHA256":os.environ["SERVER_CA_SHA256"].removeprefix("sha256 Fingerprint="),
 }
 with open(path,encoding="utf-8") as f: lines=f.read().splitlines()
 keys=set(values)
@@ -198,8 +242,8 @@ os.chmod(tmp,0o600); os.replace(tmp,path)
 PY
 
 if systemctl is-active --quiet nginx; then systemctl reload nginx; else systemctl enable --now nginx; fi
-FINGERPRINT=$(openssl x509 -in "$SERVER_CA" -noout -fingerprint -sha256 | cut -d= -f2)
 echo 'NGINX HTTPS/mTLS is configured on TCP 443.'
+echo 'HTTP dev enrollment is available on TCP 80 for installer, signed releases and enrollment only; management paths remain HTTPS/mTLS on 443.'
 echo "Controller origin: https://$HOST"
 echo "Server CA SHA-256 fingerprint: $FINGERPRINT"
 echo "Server CA download: https://$HOST/fabric/server-ca.crt"
