@@ -21,6 +21,7 @@ const {readFile}=await import('node:fs/promises');const csr=await readFile(csrPa
 const load=loader({'../db':{getDatabase:()=>pool},'next/headers':{},'next/navigation':{}});
 const inventory=load('src/lib/fabric/inventory.ts'); const enrollment=load('src/lib/fabric/enrollment.ts');
 const channel=load('src/lib/fabric/channel.ts');const auth=load('src/lib/fabric/device-auth.ts');const renewal=load('src/lib/fabric/renewal.ts');
+const deviceState=load('src/lib/fabric/device-state.ts');
 const actor=(await pool.query('SELECT id::text,email,role FROM operators WHERE email=$1',[process.env.FABRIC_TEST_EMAIL])).rows[0];
 const headers=(serial)=>new Request('https://agent.test/api/agent/v1/desired',{headers:{'x-fabric-proxy-secret':process.env.CONTROLLER_AGENT_PROXY_SECRET,'x-fabric-client-serial':serial,'x-fabric-client-verified':'SUCCESS'}});
 test.after(async()=>{await pool.end();await rm(directory,{recursive:true,force:true});});
@@ -70,6 +71,7 @@ test('token is hashed, expiring, one-use and binds signed certificate to registe
   const snapshot={eventId:randomUUID(),agentVersion:'0.1.0',os:'linux',arch:'amd64',uptimeSeconds:10,interfaces:[{name:'eth0',up:true,mtu:1500}]};
   await channel.recordHeartbeat(node.id,snapshot);await channel.recordHeartbeat(node.id,snapshot);
   const connected=await inventory.listDevices(actor);
+  assert.equal(connected.nodes.find(item=>item.id===node.id).agentVersion,'0.1.0');
   assert.equal(connected.nodes.find(item=>item.id===node.id).connectionStatus,'management-connected');
   assert.equal(connected.nodes.find(item=>item.id===node.id).configStatus,'received');
   const rejected=await channel.publishConfig(actor,node.id,{expectedRevision:2,pollIntervalSeconds:45});
@@ -97,6 +99,31 @@ test('desired-state long-poll wakes on publish and returns the durable latest re
   assert.equal(delivered.revision,published.revision);
   assert.equal(delivered.checksum,published.checksum);
   assert.equal(delivered.payload.pollIntervalSeconds,45);
+});
+
+test('desired-state long-poll wakes for a durable device-state request',async()=>{
+  const superadmin={...actor,role:'superadmin'};
+  const queuedNode=await inventory.createNode(actor,{name:'Queued Diagnostic Edge',kind:'branch',mode:'gateway'});
+  const queuedInitial=await channel.desiredConfig(queuedNode.id);
+  const queued=await deviceState.requestDeviceState(superadmin,queuedNode.id);
+  const queuedResult=await channel.waitForDesiredConfig(
+    queuedNode.id,'1',queuedInitial.checksum,500,new AbortController().signal,
+    async()=>Boolean(await deviceState.readPendingDeviceStateRequest(queuedNode.id)),
+  );
+  assert.equal(queuedResult.revision,queuedInitial.revision);
+  assert.equal((await deviceState.readPendingDeviceStateRequest(queuedNode.id)).requestId,queued.requestId);
+
+  const waitingNode=await inventory.createNode(actor,{name:'Waiting Diagnostic Edge',kind:'branch',mode:'gateway'});
+  const waitingInitial=await channel.desiredConfig(waitingNode.id);
+  const waiting=channel.waitForDesiredConfig(
+    waitingNode.id,'1',waitingInitial.checksum,2000,new AbortController().signal,
+    async()=>Boolean(await deviceState.readPendingDeviceStateRequest(waitingNode.id)),
+  );
+  await new Promise(resolve=>setTimeout(resolve,20));
+  const requested=await deviceState.requestDeviceState(superadmin,waitingNode.id);
+  const result=await waiting;
+  assert.equal(result.revision,waitingInitial.revision);
+  assert.equal((await deviceState.readPendingDeviceStateRequest(waitingNode.id)).requestId,requested.requestId);
 });
 
 test('expired/replaced/revoked enrollment and viewer issuance fail without changing device identity',async()=>{

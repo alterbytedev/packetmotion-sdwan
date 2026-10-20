@@ -54,7 +54,7 @@ func validateBGP(plan Plan) error {
 	names := map[string]bool{}
 	for _, peer := range bgp.Peers {
 		index := slices.IndexFunc(plan.Tunnels, func(t Tunnel) bool { return t.Name == peer.InterfaceName && t.PeerAddress == peer.Address })
-		if index < 0 || names[peer.InterfaceName] || !privateASN(peer.RemoteASN) || peer.RemoteASN == bgp.LocalASN ||
+		if index < 0 || names[peer.InterfaceName] || !privateASN(peer.RemoteASN) ||
 			len(peer.ImportPrefixes) != 1 || len(peer.ExportPrefixes) != 1 || peer.ExportPrefixes[0] != routing.LAN.AdvertisedPrefix ||
 			(peer.LocalPreference != 100 && peer.LocalPreference != 200) {
 			return errors.New("invalid BGP adjacency")

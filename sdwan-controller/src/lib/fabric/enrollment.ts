@@ -19,7 +19,7 @@ export async function issueToken(client: PoolClient, actor: Actor, nodeId: strin
     [nodeId, createHash('sha256').update(token).digest('hex'), expiresAt],
   );
   await auditCreation(client, actor, 'enrollment.issued', nodeId);
-  return { token, expiresAt };
+  return { token, expiresAt, nodeId };
 }
 
 export async function reissueEnrollment(actor: Actor | null, nodeId: string) {
@@ -54,7 +54,7 @@ export async function revokeDevice(actor: Actor | null, nodeId: string) {
     await client.query('UPDATE device_certificates SET revoked_at=now() WHERE node_id=$1', [
       nodeId,
     ]);
-    await detachWireguardNode(client, nodeId);
+    await detachWireguardNode(client, nodeId, fresh.email);
     await auditCreation(client, fresh, 'device.revoked', nodeId);
     return { revoked: true };
   });
@@ -76,7 +76,7 @@ export async function archiveDevice(actor: Actor | null, nodeId: string) {
     await client.query('UPDATE enrollment_tokens SET revoked_at=COALESCE(revoked_at,now()) WHERE node_id=$1', [nodeId]);
     await client.query('UPDATE device_certificates SET revoked_at=COALESCE(revoked_at,now()) WHERE node_id=$1', [nodeId]);
     // Keep /31 and Hub-port reservations while withdrawing active peer plans.
-    await detachWireguardNode(client, nodeId);
+    await detachWireguardNode(client, nodeId, fresh.email);
     await auditCreation(client, fresh, 'device.archived', nodeId);
     return { archived: true };
   });

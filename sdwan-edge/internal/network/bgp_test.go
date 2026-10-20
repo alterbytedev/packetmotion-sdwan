@@ -23,12 +23,17 @@ func TestBGPValidationBindsWireguardAndRouteOwnership(t *testing.T) {
 	if err := Validate(good); err != nil {
 		t.Fatal(err)
 	}
+	ibgp := testRoutedPlan(t)
+	ibgp.Routing.BGP.Peers[0].RemoteASN = ibgp.Routing.BGP.LocalASN
+	if err := Validate(ibgp); err != nil {
+		t.Fatalf("same-AS iBGP adjacency rejected: %v", err)
+	}
 	for _, mutate := range []func(*Plan){
 		func(p *Plan) { p.Routing.BGP.LocalASN = 64500 }, func(p *Plan) { p.Routing.BGP.RouterID = "192.168.160.141" },
 		func(p *Plan) { p.Routing.BGP.Peers[0].ImportPrefixes = []string{"0.0.0.0/0"} },
 		func(p *Plan) { p.Routing.BGP.Peers[0].ImportPrefixes = []string{"192.168.160.0/24"} },
 		func(p *Plan) { p.Tunnels[0].AllowedPrefixes = nil },
-		func(p *Plan) { p.Routing.BGP.Peers[0].RemoteASN = 65001 },
+		func(p *Plan) { p.Routing.BGP.Peers[0].RemoteASN = 64500 },
 		func(p *Plan) { p.Routing.BGP.Peers[0].ExportPrefixes = []string{"10.0.0.0/8"} },
 	} {
 		plan := testRoutedPlan(t)

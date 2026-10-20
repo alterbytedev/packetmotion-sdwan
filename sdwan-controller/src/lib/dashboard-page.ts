@@ -2,8 +2,10 @@ import 'server-only';
 import { requireUser } from '@/lib/auth';
 import { currentActor, FabricError } from '@/lib/fabric/authorization';
 import { dashboardInventory, getDevice } from '@/lib/fabric/inventory';
+import { getControllerTimeZone } from '@/lib/fabric/controller-timezone';
 import type { Inventory, NodeRecord, OperatorRole } from '@/lib/fabric/types';
 import type { DashboardView } from '@/components/controller-dashboard';
+import { availableAgentReleases } from './fabric/agent-releases';
 
 export async function dashboardPageData(view: DashboardView, deviceId?: string) {
   const email = await requireUser();
@@ -22,5 +24,7 @@ export async function dashboardPageData(view: DashboardView, deviceId?: string) 
         ? 'Device not found. Return to Devices and choose an existing device.'
         : 'Inventory is unavailable. Contact your controller administrator.';
   }
-  return { email, inventory, role, inventoryError, selectedDevice };
+  const timeZone = await getControllerTimeZone();
+  const agentReleases = view === 'devices' && selectedDevice && role === 'superadmin' ? await availableAgentReleases() : [];
+  return { email, inventory, role, inventoryError, selectedDevice, timeZone, agentReleases };
 }

@@ -7,6 +7,7 @@ import {
   Copy,
   Fingerprint,
   Pencil,
+  RefreshCw,
   Radio,
   Router,
   ShieldCheck,
@@ -14,7 +15,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useRef, useState } from 'react';
 import { connectionStatusLabels } from '@/components/fabric/connection-status';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,16 +23,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Feedback } from '@/components/ui/feedback';
 import { Input } from '@/components/ui/input';
 import { Modal, ModalFooter } from '@/components/ui/modal';
-import { formatDateTimeUtc, formatDateUtc } from '@/lib/date-format';
+import { formatDateTime, formatDate } from '@/lib/date-format';
+import { useControllerTimeZone } from '@/lib/time-zone-context';
 import type { NodeRecord, OperatorRole } from '@/lib/fabric/types';
 import { AgentConfiguration } from './agent-configuration';
 import { AgentTelemetry } from './agent-telemetry';
+import { DeviceConnectionStatus } from './device-connection-status';
 import { type EnrollmentDetails, EnrollmentInstructions } from './enrollment-details';
 import { LanSettings } from './lan-settings';
 import { NetworkConfigurationPreview } from './network-configuration-preview';
 import { WireguardConnections } from './wireguard-connections';
+import { DeviceCommandHistory } from './device-command-history';
+import { DeviceConfigurationSources } from './device-configuration-sources';
+import { AgentUpgrade } from './agent-upgrade';
+import type { AgentRelease } from '@/lib/fabric/agent-releases';
 
-export function DeviceDetails({ node, role }: { node: NodeRecord; role: OperatorRole }) {
+export function DeviceDetails({ node, role, agentReleases }: { node: NodeRecord; role: OperatorRole; agentReleases: AgentRelease[] }) {
+  const { timeZone } = useControllerTimeZone();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(0);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -41,7 +49,7 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
   const [renameOpen, setRenameOpen] = useState(false);
   const [name, setName] = useState(node.name);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const tabs = ['Overview', 'Connections', 'Configuration', 'Telemetry'];
+  const tabs = ['Overview', 'Connections', 'Configuration', ...(role === 'superadmin' ? ['Agent upgrade', 'Command history', 'Configuration sources'] : [])];
   const tabId = (index: number) => `device-${node.id}-tab-${index}`;
   const panelId = (index: number) => `device-${node.id}-panel-${index}`;
   const statusTone =
@@ -50,11 +58,7 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
       : node.connectionStatus === 'revoked'
         ? 'border-rose-600/30 bg-rose-600/10 text-rose-800 dark:text-rose-300'
         : 'border-muted-foreground/20 bg-muted/60 text-muted-foreground';
-  const lastSeen = node.lastSeenAt ? formatDateTimeUtc(node.lastSeenAt) : null;
-  useEffect(() => {
-    const timer = setInterval(() => router.refresh(), 15_000);
-    return () => clearInterval(timer);
-  }, [router]);
+  const lastSeen = node.lastSeenAt ? formatDateTime(node.lastSeenAt, timeZone) : null;
   async function copyDeviceId() {
     try {
       await navigator.clipboard.writeText(node.id);
@@ -195,14 +199,18 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
                   </span>
                   <span className="inline-flex items-center gap-1.5">
                     <Clock3 size={14} aria-hidden="true" />
-                    Added {formatDateUtc(node.createdAt)} UTC
+                    Added {formatDate(node.createdAt, timeZone)}
                   </span>
                 </div>
               </div>
             </div>
-            {role !== 'viewer' && (
+            <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => router.refresh()} className="w-full sm:w-auto">
+                <RefreshCw aria-hidden="true" /> Refresh status
+              </Button>
+              {role !== 'viewer' && (
               <fieldset
-                className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:flex sm:flex-wrap sm:justify-end"
+                className="contents"
                 aria-label="Device actions"
               >
                 {['pending', 'enrolling'].includes(node.connectionStatus) && (
@@ -241,7 +249,8 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
                   Archive device
                 </Button>
               </fieldset>
-            )}
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-2">
@@ -300,12 +309,16 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
                 </Button>
               </div>
             </details>
+            <DeviceConnectionStatus nodeId={node.id} />
             {error && <Feedback tone="error">{error}</Feedback>}
             {enrollment && (
               <EnrollmentInstructions enrollment={enrollment} onClose={() => setEnrollment(null)} />
             )}
           </CardContent>
         </Card>
+        <div className="mt-5">
+          <AgentTelemetry key={`telemetry-${node.id}`} node={node} />
+        </div>
         {renameOpen && (
           <Card className="mt-4">
             <CardHeader>
@@ -362,9 +375,25 @@ export function DeviceDetails({ node, role }: { node: NodeRecord; role: Operator
         <NetworkConfigurationPreview key={`network-${node.id}`} node={node} role={role} />
         <AgentConfiguration key={`config-${node.id}`} inventory={inventory} role={role} />
       </section>
-      <section id={panelId(3)} role="tabpanel" aria-labelledby={tabId(3)} hidden={activeTab !== 3}>
-        <AgentTelemetry key={`telemetry-${node.id}`} inventory={inventory} />
-      </section>
+      {role === 'superadmin' && (
+        <section id={panelId(3)} role="tabpanel" aria-labelledby={tabId(3)} hidden={activeTab !== 3}>
+          <AgentUpgrade releases={agentReleases} />
+        </section>
+      )}
+      {role === 'superadmin' && (
+        <section id={panelId(5)} role="tabpanel" aria-labelledby={tabId(5)} hidden={activeTab !== 5}>
+          <DeviceConfigurationSources
+            key={`device-state-${node.id}`}
+            nodeId={node.id}
+            deviceOnline={node.connectionStatus === 'management-connected'}
+          />
+        </section>
+      )}
+      {role === 'superadmin' && (
+        <section id={panelId(4)} role="tabpanel" aria-labelledby={tabId(4)} hidden={activeTab !== 4}>
+          <DeviceCommandHistory key={`command-history-${node.id}`} nodeId={node.id} />
+        </section>
+      )}
       <Modal
         open={archiveOpen}
         onOpenChange={setArchiveOpen}

@@ -8,11 +8,13 @@ import { Feedback } from '@/components/ui/feedback';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import type { OperatorRole } from '@/lib/fabric/types';
-import { formatDateUtc } from '@/lib/date-format';
+import { formatDate } from '@/lib/date-format';
+import { useControllerTimeZone } from '@/lib/time-zone-context';
 
 type Operator = { id: string; email: string; role: OperatorRole; createdAt: string };
 
 export function OperatorManager({ role }: { role: OperatorRole }) {
+  const { timeZone } = useControllerTimeZone();
   const [operators, setOperators] = useState<Operator[]>([]);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
@@ -105,7 +107,7 @@ export function OperatorManager({ role }: { role: OperatorRole }) {
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-left text-sm">
             <thead className="bg-muted/50 text-xs text-muted-foreground"><tr><th className="p-3">Email</th><th className="p-3">Role</th><th className="p-3">Created</th></tr></thead>
-            <tbody>{operators.map((operator) => <tr key={operator.id} className="border-t"><td className="p-3 font-medium">{operator.email}</td><td className="p-3">{operator.role === 'viewer' ? 'User (viewer)' : operator.role}</td><td className="p-3">{formatDateUtc(operator.createdAt)} UTC</td></tr>)}</tbody>
+            <tbody>{operators.map((operator) => <tr key={operator.id} className="border-t"><td className="p-3 font-medium">{operator.email}</td><td className="p-3">{operator.role === 'viewer' ? 'User (viewer)' : operator.role}</td><td className="p-3">{formatDate(operator.createdAt, timeZone)}</td></tr>)}</tbody>
           </table>
         </div>
       </CardContent>

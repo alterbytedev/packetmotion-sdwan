@@ -5,6 +5,7 @@ import type { PoolClient } from 'pg';
 import { getDatabase } from '../db';
 import { authorize, FabricError } from './authorization';
 import { auditCreation } from './audit';
+import { recordCommandPublication } from './command-history';
 import { issueToken } from './enrollment';
 import { siteInput, nodeInput, nodeNameInput, nodeIdInput } from './validation';
 import type { Actor, Inventory, Site, NodeRecord } from './types';
@@ -15,6 +16,8 @@ const siteColumns =
 // describe management connectivity, not successful network configuration apply.
 const nodeColumns = `
   n.id, n.site_id AS "siteId", s.name AS "siteName", n.name, n.kind, n.created_at::text AS "createdAt", n.last_seen_at::text AS "lastSeenAt",
+  (SELECT dt.snapshot->>'agentVersion' FROM device_telemetry dt WHERE dt.node_id=n.id ORDER BY dt.received_at DESC LIMIT 1) AS "agentVersion",
+  (SELECT dt.received_at::text FROM device_telemetry dt WHERE dt.node_id=n.id ORDER BY dt.received_at DESC LIMIT 1) AS "telemetryReceivedAt",
   (SELECT dc.revision
    FROM desired_configs dc
    WHERE dc.node_id=n.id
@@ -128,7 +131,7 @@ export async function createSite(actor: Actor | null, value: unknown): Promise<S
 export async function createNode(
   actor: Actor | null,
   value: unknown,
-): Promise<NodeRecord & { enrollment: { token: string; expiresAt: string } }> {
+): Promise<NodeRecord & { enrollment: { token: string; expiresAt: string; nodeId: string } }> {
   authorize(actor, true);
   const input = nodeInput(value);
   return mutate(actor, async (client, fresh) => {
@@ -161,6 +164,8 @@ export async function createNode(
       'INSERT INTO desired_configs(node_id,revision,payload,checksum) VALUES($1,1,$2,$3)',
       [id, serialized, checksum],
     );
+    await recordCommandPublication(client, id, 1, 'desired_config', fresh.email,
+      'Initial desired configuration published.', serialized);
     await auditCreation(client, fresh, 'config.published', id);
     const result = await client.query<NodeRecord>(
       `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id = n.site_id WHERE n.id = $1`,

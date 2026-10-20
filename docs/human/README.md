@@ -29,6 +29,7 @@ This index groups the product and operational material for operators, reviewers,
 - [Runtime error troubleshooting](../operations/runtime-error-troubleshooting.md)
 - [Codebase map and maintenance guide](../development/codebase-map.md)
 - [Testing strategy](../development/testing-strategy.md)
+- [Controller-agent communication reliability plan](../development/controller-agent-communication-plan.md)
 - [Controller UI component architecture](../development/ui-component-architecture.md)
 - [Controller development guide](../../sdwan-controller/README.md)
 - [Go agent guide](../../sdwan-edge/README.md)

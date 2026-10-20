@@ -38,8 +38,8 @@ test('login, protected dashboard, navigation, and logout', async ({ page }, test
     fullPage: true,
   });
   await page.goto('/dashboard/telemetry');
-  await expect(page).toHaveURL(/dashboard\/telemetry$/);
-  await expect(page.getByRole('heading', { name: 'Telemetry', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/dashboard\/devices$/);
+  await expect(page.getByRole('heading', { name: 'Devices', exact: true })).toBeVisible();
   await page.goto('/dashboard/settings');
   await expect(page).toHaveURL(/dashboard\/settings$/);
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();

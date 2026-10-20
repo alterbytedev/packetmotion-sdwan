@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { signSession } from '../../src/lib/session';
 import { clearInventory, database, login } from './fixture';
@@ -306,6 +306,9 @@ test('device detail tabs support keyboard navigation, rename and archive', async
   const tabs = page.getByRole('tablist', { name: 'Device details' });
   const overview = tabs.getByRole('tab', { name: 'Overview' });
   await expect(overview).toHaveAttribute('aria-selected', 'true');
+  await expect(tabs.getByRole('tab')).toHaveCount(3);
+  await expect(page.getByRole('heading', { name: 'Agent telemetry' })).toBeVisible();
+  await expect(page.getByLabel('Device', { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `test-results/device-detail-overview-${info.project.name}.png`, fullPage: true });
   await overview.focus();
   await page.keyboard.press('ArrowRight');
@@ -332,6 +335,97 @@ test('device detail tabs support keyboard navigation, rename and archive', async
   const activeInventory = await page.request.get('/api/operator/nodes?search=Renamed%20Tabbed%20Edge');
   expect((await activeInventory.json()).total).toBe(0);
   expect((await database(pool => pool.query('SELECT archived_at FROM nodes WHERE id=$1', [target]))).rows[0].archived_at).not.toBeNull();
+});
+
+test('device command history is visible only to superadmins and API enforces the live role', async ({ page }) => {
+  const { nodeId, operationId, email, passwordHash } = await database(async (pool) => {
+    const site = (await pool.query(
+      "INSERT INTO sites(id,name,mode) VALUES(gen_random_uuid(),'History network','gateway') RETURNING id",
+    )).rows[0].id;
+    const node = (await pool.query(
+      "INSERT INTO nodes(id,site_id,name,kind) VALUES(gen_random_uuid(),$1,'History device','branch') RETURNING id",
+      [site],
+    )).rows[0].id;
+    const operationId = randomUUID();
+    await pool.query(
+      `INSERT INTO device_command_history(operation_id,node_id,operation_type,revision,event,attempt,actor_email,summary,raw_config)
+       VALUES($1,$2,'desired_config',1,'published',1,$3,'Initial desired configuration published.',$4)`,
+      [operationId, node, process.env.FABRIC_TEST_EMAIL, '{"schemaVersion":1,"pollIntervalSeconds":30}'],
+    );
+    await pool.query("UPDATE operators SET role='superadmin' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]);
+    const operator = (await pool.query('SELECT email,password_hash FROM operators WHERE email=$1', [process.env.FABRIC_TEST_EMAIL])).rows[0];
+    return { nodeId: node, operationId, email: operator.email, passwordHash: operator.password_hash };
+  });
+  try {
+    const credentialVersion = createHash('sha256').update(passwordHash).digest('hex');
+    const session = signSession(email, process.env.CONTROLLER_SESSION_SECRET!, Date.now(), credentialVersion);
+    await page.context().addCookies([{ name: 'sdwan-session', value: session, url: 'http://127.0.0.1:3107' }]);
+    await page.goto(`/dashboard/devices/${nodeId}`);
+    await expect(page.getByRole('tab', { name: 'Agent upgrade' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Agent upgrade' }).click();
+    await expect(page.getByLabel('Release version')).toBeVisible();
+    await expect(page.getByText(/curl -fsSL .*\/fabric\/edge\.sh \| sudo bash -s -- --controller/)).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Command history' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Command history' }).click();
+    await expect(page.getByRole('tab', { name: 'Command history' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByText('Published · Desired configuration r1', { exact: false })).toBeVisible();
+    await expect(page.getByText(/Event 1 · Operation/)).toBeVisible();
+    await expect(page.locator('time')).not.toContainText('UTC UTC');
+    await page.getByRole('button', { name: 'View raw config' }).click();
+    await expect(page.locator('pre')).toHaveText('{"schemaVersion":1,"pollIntervalSeconds":30}');
+    const snapshot = await page.request.get(`/api/operator/nodes/${nodeId}/command-history/config?operationId=${operationId}`);
+    expect((await snapshot.json()).rawConfig).toBe('{"schemaVersion":1,"pollIntervalSeconds":30}');
+    expect((await page.request.get(`/api/operator/nodes/${nodeId}/command-history`)).status()).toBe(200);
+
+    await page.getByRole('tab', { name: 'Configuration sources' }).click();
+    await page.getByRole('button', { name: 'Collect current state' }).click();
+    await expect(page.getByText('Waiting for the device agent…')).toBeVisible();
+    await expect(page.getByText(/^Request ID: [0-9a-f-]{36}$/i)).toBeVisible();
+    await database(async (pool) => {
+      const report = {
+        stateDirectory: '/var/lib/packetmotion', revision: 3, wireguardEnabled: true,
+        files: [{ name: 'Applied plan', path: '/var/lib/packetmotion/network-applied.json', present: true }],
+        appliedPlan: { tunnels: [] }, interfaces: [], unplannedOwnedInterfaces: [],
+      };
+      await pool.query(
+        "UPDATE device_state_reports SET status='completed',completed_at=now(),report=$2 WHERE node_id=$1",
+        [nodeId, JSON.stringify(report)],
+      );
+    });
+    await expect(page.getByRole('region', { name: 'Device-reported current state' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('/var/lib/packetmotion/network-applied.json', { exact: true })).toBeVisible();
+    expect((await page.request.get(`/api/operator/nodes/${nodeId}/device-state`)).status()).toBe(200);
+
+    await page.getByRole('button', { name: 'Collect current state' }).click();
+    await expect(page.getByText('Waiting for the device agent…')).toBeVisible();
+    await database(async (pool) => {
+      await pool.query("UPDATE device_state_reports SET status='unavailable',unavailable_reason='timeout',completed_at=now(),report=NULL WHERE node_id=$1", [nodeId]);
+    });
+    await expect(page.getByText(/request expired without a report/i)).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole('button', { name: 'Collect current state' }).click();
+    await expect(page.getByText('Waiting for the device agent…')).toBeVisible();
+    await database(async (pool) => {
+      await pool.query("UPDATE device_state_reports SET status='unavailable',unavailable_reason='collection_failed',completed_at=now(),report=NULL WHERE node_id=$1", [nodeId]);
+    });
+    await expect(page.getByText(/agent could not collect its current state/i)).toBeVisible({ timeout: 10_000 });
+
+    await database(async (pool) => {
+      await pool.query("UPDATE operators SET role='admin' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]);
+    });
+    expect((await page.request.get(`/api/operator/nodes/${nodeId}/command-history`)).status()).toBe(403);
+    expect((await page.request.get(`/api/operator/nodes/${nodeId}/command-history/config?operationId=${operationId}`)).status()).toBe(403);
+    expect((await page.request.get(`/api/operator/nodes/${nodeId}/device-state`)).status()).toBe(403);
+    expect((await page.request.post(`/api/operator/nodes/${nodeId}/device-state`, {
+      headers: { Origin: 'http://127.0.0.1:3107', 'Content-Type': 'application/json' }, data: {},
+    })).status()).toBe(403);
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Command history' })).toHaveCount(0);
+  } finally {
+    await database(async (pool) => {
+      await pool.query("UPDATE operators SET role='admin' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]);
+    });
+  }
 });
 
 test('device network preview adds firewall rules in an accessible modal without persisting them', async ({
@@ -401,4 +495,65 @@ test('async device search ignores older responses and recovers from load errors'
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.locator('p[role="alert"]')).toHaveCount(0);
   await expect(page.getByText('No devices match “fail”', { exact: true })).toBeVisible();
+});
+
+test('connection check explains reused appliance enrollment and refreshes lifecycle evidence', async ({ page }, info) => {
+  const origin = 'http://127.0.0.1:3107';
+  // Reuse the signed operator-session fixture used by other feature tests;
+  // login-form behavior is covered separately.
+  const operator = await database(async pool => (await pool.query('SELECT email,password_hash FROM operators WHERE email=$1', [process.env.FABRIC_TEST_EMAIL])).rows[0]);
+  const credentialVersion = createHash('sha256').update(operator.password_hash).digest('hex');
+  const session = signSession(operator.email, process.env.CONTROLLER_SESSION_SECRET!, Date.now(), credentialVersion);
+  await page.context().addCookies([{ name: 'sdwan-session', value: session, url: origin }]);
+  const response = await page.request.post('/api/operator/nodes', {
+    headers: { Origin: origin }, data: { name: 'Reused Debian edge', kind: 'branch', mode: 'gateway' },
+  });
+  expect(response.status()).toBe(201);
+  const created = await response.json();
+  const id = created.node.id;
+  expect(created.enrollment.nodeId).toBe(id);
+  await page.goto(`/dashboard/devices/${id}`);
+  const check = page.getByRole('region', { name: 'Connection check' });
+  await expect(check.getByText('The controller has not accepted enrollment for this device.')).toBeVisible();
+  await expect(check.getByText(/Archiving an entry leaves its local identity on disk/)).toBeVisible();
+  await page.getByRole('button', { name: 'Enroll device', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Device enrollment' }).getByText(new RegExp(`--expected-node-id ${id}`))).toBeVisible();
+  const commands = page.getByRole('region', { name: 'Device enrollment' }).locator('pre');
+  await expect(commands).toBeVisible();
+  expect(await commands.innerText()).toContain('ExecMainStatus;\nsudo journalctl');
+  await expect(commands).toHaveCSS('white-space', 'pre-wrap');
+  await commands.screenshot({ path: info.outputPath('troubleshooting-commands.png') });
+  const enrollmentRegion = page.getByRole('region', { name: 'Device enrollment' });
+  await expect(enrollmentRegion.getByText(/installer offers a confirmed reset/)).toBeVisible();
+  await enrollmentRegion.locator('code').evaluateAll(elements => elements.forEach(element => { element.style.visibility = 'hidden'; }));
+  await enrollmentRegion.screenshot({ path: info.outputPath('replacement-enrollment.png') });
+  await enrollmentRegion.locator('code').evaluateAll(elements => elements.forEach(element => { element.style.visibility = ''; }));
+  await page.getByRole('button', { name: 'Hide token', exact: true }).click();
+  await database(async pool => { await pool.query("UPDATE enrollment_tokens SET expires_at=now()-interval '1 minute' WHERE node_id=$1", [id]); });
+  await check.getByRole('button', { name: 'Refresh connection status' }).click();
+  await expect(check.getByText('Enrollment token expired before enrollment was accepted.')).toBeVisible();
+  await check.getByText('Recent connection events', { exact: true }).click();
+  await expect(check.getByText(/Enrollment token issued/).first()).toBeVisible();
+  await check.getByText('Check the Debian agent', { exact: true }).click();
+  await expect(check.getByText(/sudo journalctl -u fabric-agent/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath('connection-status.png'), fullPage: true });
+
+  await database(async pool => { await pool.query('UPDATE nodes SET enrolled_at=now() WHERE id=$1', [id]); });
+  await check.getByRole('button', { name: 'Refresh connection status' }).click();
+  await expect(check.getByText('Enrollment was accepted, but no management heartbeat has arrived.')).toBeVisible();
+  await page.route(`**/api/operator/nodes/${id}/connection-status`, route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Connection status temporarily unavailable.' }) }));
+  await check.getByRole('button', { name: 'Refresh connection status' }).click();
+  await expect(check.getByRole('alert')).toHaveText('Connection status temporarily unavailable.');
+  await page.unroute(`**/api/operator/nodes/${id}/connection-status`);
+  await check.getByRole('button', { name: 'Refresh connection status' }).click();
+  await expect(check.getByRole('alert')).toHaveCount(0);
+  await database(async pool => { await pool.query("UPDATE operators SET role='viewer' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]); });
+  try {
+    expect((await page.request.get(`/api/operator/nodes/${id}/connection-status`)).status()).toBe(200);
+  } finally {
+    await database(async pool => { await pool.query("UPDATE operators SET role='admin' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]); });
+  }
+  await page.context().clearCookies();
+  expect((await page.request.get(`/api/operator/nodes/${id}/connection-status`)).status()).toBe(401);
 });

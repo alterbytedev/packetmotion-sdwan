@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,49 @@ func TestKeyAndValidation(t *testing.T) {
 	}
 	if _, _, err := Key(dir); err == nil {
 		t.Fatal("public key file accepted")
+	}
+}
+
+func TestDeviceStateReportsOnlyKnownFilesAndOwnedInterfaces(t *testing.T) {
+	directory := privateDirectory(t)
+	secret, _, err := Key(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tunnel := testTunnel(t)
+	plan := Plan{Tunnels: []Tunnel{tunnel}}
+	if err = writePlan(directory, "network-applied.json", plan); err != nil {
+		t.Fatal(err)
+	}
+	engine := Engine{Directory: directory, NodeID: "diagnostic-node"}
+	links := fmt.Sprintf(`[{"ifname":%q,"group":%q,"flags":["UP"],"linkinfo":{"info_kind":"wireguard"}},{"ifname":"pm000000000000","group":%q,"flags":["UP"],"linkinfo":{"info_kind":"wireguard"}}]`, tunnel.Name, engine.group(), engine.group())
+	engine.Run = func(_ context.Context, name string, args []string, _ string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if name == "ip" && strings.Contains(joined, "-details link") {
+			return []byte(links), nil
+		}
+		if name == "ip" && strings.Contains(joined, "address show") {
+			return []byte(fmt.Sprintf(`[{"ifname":%q,"addr_info":[{"family":"inet","local":"10.250.0.1","prefixlen":31}]}]`, tunnel.Name)), nil
+		}
+		if name == "wg" && strings.Contains(joined, "latest-handshakes") {
+			return []byte(tunnel.PublicKey + "\t0\n"), nil
+		}
+		t.Fatalf("unexpected diagnostic command: %s %s", name, joined)
+		return nil, nil
+	}
+	state, err := engine.DeviceState(context.Background(), 3, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Revision != 3 || state.AppliedPlan == nil || !state.Interfaces[0].Present || !state.Interfaces[0].Up || state.Interfaces[0].LastHandshake == nil || *state.Interfaces[0].LastHandshake != 0 {
+		t.Fatalf("device state missing observations: %#v", state)
+	}
+	if len(state.Interfaces[0].Addresses) != 1 || state.Interfaces[0].Addresses[0] != "10.250.0.1/31" || len(state.UnplannedOwnedInterfaces) != 1 {
+		t.Fatalf("device state did not scope owned interfaces: %#v", state)
+	}
+	data, err := json.Marshal(state)
+	if err != nil || strings.Contains(string(data), secret) || !state.Files[3].Present {
+		t.Fatal("device state included key material or omitted the private-key path")
 	}
 }
 func TestPreflightNeverMutatesForeignInterfacesOrOverlappingRoutes(t *testing.T) {

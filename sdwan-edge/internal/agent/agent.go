@@ -19,10 +19,11 @@ import (
 	"packetmotion/fabric-agent/internal/network"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
-const Version = "0.2.0"
+const Version = "0.3.3"
 
 type Enrolled struct {
 	NodeID      string `json:"nodeId"`
@@ -33,10 +34,14 @@ type Enrolled struct {
 	AgentURL    string `json:"agentUrl"`
 }
 type Desired struct {
-	Unchanged bool            `json:"unchanged"`
-	Revision  int             `json:"revision"`
-	Payload   json.RawMessage `json:"payload"`
-	Checksum  string          `json:"checksum"`
+	Unchanged         bool               `json:"unchanged"`
+	Revision          int                `json:"revision"`
+	Payload           json.RawMessage    `json:"payload"`
+	Checksum          string             `json:"checksum"`
+	DiagnosticRequest *DiagnosticRequest `json:"diagnosticRequest,omitempty"`
+}
+type DiagnosticRequest struct {
+	RequestID string `json:"requestId"`
 }
 type Config struct {
 	Wireguard           *network.Plan `json:"wireguard,omitempty"`
@@ -158,14 +163,18 @@ func Poll(ctx context.Context, client *controller.Client, state *identity.State,
 	return interval, errors.Join(heartbeatErr, configErr)
 }
 
+func Heartbeat(ctx context.Context, client *controller.Client, snapshot Telemetry) error {
+	return client.Request(ctx, http.MethodPost, "/api/agent/v1/heartbeat", snapshot, nil)
+}
+
 func Cycle(ctx context.Context, client *controller.Client, state *identity.State, directory string, snapshot Telemetry) (time.Duration, error, error) {
-	heartbeatErr := client.Request(ctx, http.MethodPost, "/api/agent/v1/heartbeat", snapshot, nil)
+	heartbeatErr := Heartbeat(ctx, client, snapshot)
 	interval, configErr := Reconcile(ctx, client, state, directory)
 	return interval, heartbeatErr, configErr
 }
 
 func CycleWait(ctx context.Context, client *controller.Client, state *identity.State, directory string, snapshot Telemetry, wait time.Duration) (time.Duration, error, error) {
-	heartbeatErr := client.Request(ctx, http.MethodPost, "/api/agent/v1/heartbeat", snapshot, nil)
+	heartbeatErr := Heartbeat(ctx, client, snapshot)
 	interval, configErr := ReconcileWait(ctx, client, state, directory, wait)
 	return interval, heartbeatErr, configErr
 }
@@ -174,24 +183,32 @@ func Reconcile(ctx context.Context, client *controller.Client, state *identity.S
 	return ReconcileWait(ctx, client, state, directory, 0)
 }
 
-func ReconcileWait(ctx context.Context, client *controller.Client, state *identity.State, directory string, wait time.Duration) (time.Duration, error) {
-	if state.WireGuardEnabled {
-		_, publicKey, err := network.Key(directory)
-		if err != nil {
-			return 0, err
-		}
-		if state.WireGuardPublicKey != publicKey {
-			if err = client.Request(ctx, http.MethodPost, "/api/agent/v1/wireguard-key", map[string]string{"publicKey": publicKey}, nil); err != nil {
-				return 0, err
-			}
-			next := *state
-			next.WireGuardPublicKey = publicKey
-			if err = identity.Save(directory, next); err != nil {
-				return 0, err
-			}
-			*state = next
-		}
+// registerWireGuardKey needs only private state and the authenticated management
+// channel. Publishing a public key never grants permission to apply networking.
+func registerWireGuardKey(ctx context.Context, client *controller.Client, state *identity.State, directory string) error {
+	_, publicKey, err := network.Key(directory)
+	if err != nil {
+		return err
 	}
+	if state.WireGuardPublicKey == publicKey {
+		return nil
+	}
+	if err := client.Request(ctx, http.MethodPost, "/api/agent/v1/wireguard-key", map[string]string{"publicKey": publicKey}, nil); err != nil {
+		return err
+	}
+	next := *state
+	next.WireGuardPublicKey = publicKey
+	if err := identity.Save(directory, next); err != nil {
+		return err
+	}
+	*state = next
+	return nil
+}
+
+func ReconcileWait(ctx context.Context, client *controller.Client, state *identity.State, directory string, wait time.Duration) (interval time.Duration, resultErr error) {
+	registrationErr := registerWireGuardKey(ctx, client, state, directory)
+	// Registration retries must not prevent desired-state staging or acknowledgement.
+	defer func() { resultErr = errors.Join(resultErr, registrationErr) }()
 	var desired Desired
 	path := "/api/agent/v1/desired"
 	var cached []byte
@@ -228,81 +245,128 @@ func ReconcileWait(ctx context.Context, client *controller.Client, state *identi
 	if err := client.Request(ctx, http.MethodGet, path, nil, &desired); err != nil {
 		return 0, err
 	}
+	// Diagnostic collection is independent of config parsing, staging, ack, and
+	// optional local network apply. The report describes state at check-in time.
+	diagnosticErr := reportDeviceState(ctx, client, state, directory, desired.DiagnosticRequest)
 	if desired.Revision == 0 {
-		return 30 * time.Second, nil
+		return 30 * time.Second, diagnosticErr
 	}
 	if desired.Unchanged {
 		if cached == nil || desired.Revision != state.Revision || desired.Checksum != state.Checksum {
-			return 0, errors.New("invalid unchanged revision")
+			return 0, errors.Join(errors.New("invalid unchanged revision"), diagnosticErr)
 		}
 		desired.Payload = cached
 	}
 	sum := sha256.Sum256(desired.Payload)
 	if desired.Revision < state.Revision || (desired.Revision == state.Revision && state.Checksum != "" && desired.Checksum != state.Checksum) || desired.Checksum != hex.EncodeToString(sum[:]) {
-		return 0, errors.New("invalid/stale desired revision")
+		return 0, errors.Join(errors.New("invalid/stale desired revision"), diagnosticErr)
 	}
 	var config Config
 	decoder := json.NewDecoder(bytes.NewReader(desired.Payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {
-		return reject(ctx, client, desired, "invalid desired config")
+		return rejectWithDiagnostic(ctx, client, desired, "invalid desired config", diagnosticErr)
 	}
-	if (config.SchemaVersion != 1 && config.SchemaVersion != 2) || config.DeviceKind != state.Kind || (config.Mode != "gateway" && config.Mode != "subnet-router") || config.PollIntervalSeconds < 10 || config.PollIntervalSeconds > 300 {
-		return reject(ctx, client, desired, "unsupported desired config")
+	if (config.SchemaVersion < 1 || config.SchemaVersion > 3) || config.DeviceKind != state.Kind || (config.Mode != "gateway" && config.Mode != "subnet-router") || config.PollIntervalSeconds < 10 || config.PollIntervalSeconds > 300 {
+		return rejectWithDiagnostic(ctx, client, desired, "unsupported desired config", diagnosticErr)
 	}
-	if (config.SchemaVersion == 2 && config.Wireguard == nil) || (config.SchemaVersion == 1 && config.Wireguard != nil) {
-		return reject(ctx, client, desired, "invalid network schema")
+	if (config.SchemaVersion >= 2 && config.Wireguard == nil) || (config.SchemaVersion == 1 && config.Wireguard != nil) || (config.SchemaVersion == 3 && (config.Wireguard == nil || config.Wireguard.Routing == nil)) || (config.SchemaVersion == 2 && config.Wireguard != nil && config.Wireguard.Routing != nil) {
+		return rejectWithDiagnostic(ctx, client, desired, "invalid network schema", diagnosticErr)
 	}
 	if config.Wireguard != nil {
-		// Routed LAN activation has a separate schema and local privilege boundary.
-		// Schema 2 remains WireGuard adjacency only until that contract is delivered.
-		if config.Wireguard.Routing != nil {
-			return reject(ctx, client, desired, "routing is not supported by this schema")
-		}
 		if err := network.Validate(*config.Wireguard); err != nil {
-			return reject(ctx, client, desired, "invalid WireGuard plan")
+			return rejectWithDiagnostic(ctx, client, desired, "invalid WireGuard plan", diagnosticErr)
 		}
 	}
 	if config.LANPrefix != nil {
 		if _, network, err := net.ParseCIDR(*config.LANPrefix); err != nil || network.IP.To4() == nil {
-			return reject(ctx, client, desired, "invalid LAN prefix")
+			return rejectWithDiagnostic(ctx, client, desired, "invalid LAN prefix", diagnosticErr)
 		}
 	}
 	// Receipt is durable staging; optional local network apply is reported separately.
 	if cached == nil || desired.Revision != state.Revision || desired.Checksum != state.Checksum {
 		if err := identity.WritePrivate(directory, "desired.json", desired.Payload); err != nil {
-			return 0, err
+			return 0, errors.Join(err, diagnosticErr)
 		}
 		next := *state
 		next.Revision, next.Checksum, next.PendingAcknowledgement = desired.Revision, desired.Checksum, true
 		if err := identity.Save(directory, next); err != nil {
-			return 0, err
+			return 0, errors.Join(err, diagnosticErr)
 		}
 		*state = next
 	}
 	if state.PendingAcknowledgement {
 		if err := client.Request(ctx, http.MethodPost, "/api/agent/v1/ack", map[string]any{"revision": desired.Revision, "checksum": desired.Checksum, "status": "received"}, nil); err != nil {
-			return 0, err
+			return 0, errors.Join(err, diagnosticErr)
 		}
 		next := *state
 		next.PendingAcknowledgement = false
 		if err := identity.Save(directory, next); err != nil {
-			return 0, err
+			return 0, errors.Join(err, diagnosticErr)
 		}
 		*state = next
 	}
+	var wireguardErr error
 	if config.Wireguard != nil {
-		err := reconcileWireguard(ctx, client, state, directory, *config.Wireguard)
-		if err != nil {
-			return 0, err
+		wireguardErr = reconcileWireguard(ctx, client, state, directory, *config.Wireguard)
+	}
+	return time.Duration(config.PollIntervalSeconds) * time.Second, errors.Join(wireguardErr, diagnosticErr)
+}
+
+func reportDeviceState(ctx context.Context, client *controller.Client, state *identity.State, directory string, request *DiagnosticRequest) error {
+	if request == nil {
+		return nil
+	}
+	if len(request.RequestID) != 36 || request.RequestID[8] != '-' || request.RequestID[13] != '-' || request.RequestID[18] != '-' || request.RequestID[23] != '-' {
+		return errors.New("invalid device state request")
+	}
+	for _, char := range request.RequestID {
+		if char != '-' && !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return errors.New("invalid device state request")
 		}
 	}
-	return time.Duration(config.PollIntervalSeconds) * time.Second, nil
+	status := "completed"
+	reason := ""
+	var report *network.DeviceState
+	engine := network.Engine{Directory: directory, NodeID: state.NodeID,
+		AllowRouting: state.RoutingEnabled, LANInterface: state.LANInterface}
+	value, err := engine.DeviceState(ctx, state.Revision, state.WireGuardEnabled)
+	if err != nil {
+		status = "unavailable"
+		reason = "collection_failed"
+	} else {
+		if value.AppliedPlan != nil {
+			for i := range value.AppliedPlan.Tunnels {
+				if value.AppliedPlan.Tunnels[i].AllowedPrefixes == nil {
+					value.AppliedPlan.Tunnels[i].AllowedPrefixes = []string{}
+				}
+			}
+		}
+		report = &value
+	}
+	return client.Request(ctx, http.MethodPost, "/api/agent/v1/device-state", boundedDeviceStateResponse(request.RequestID, status, report, reason), nil)
+}
+
+func boundedDeviceStateResponse(requestID, status string, report *network.DeviceState, reasons ...string) map[string]any {
+	response := map[string]any{"requestId": requestID, "status": status, "report": report}
+	if len(reasons) > 0 && reasons[0] != "" {
+		response["reason"] = reasons[0]
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil || len(encoded) > 32768 {
+		return map[string]any{"requestId": requestID, "status": "unavailable", "reason": "collection_failed", "report": nil}
+	}
+	return response
 }
 
 func reject(ctx context.Context, client *controller.Client, desired Desired, reason string) (time.Duration, error) {
 	err := client.Request(ctx, http.MethodPost, "/api/agent/v1/ack", map[string]any{"revision": desired.Revision, "checksum": desired.Checksum, "status": "rejected"}, nil)
 	return 0, errors.Join(errors.New(reason), err)
+}
+
+func rejectWithDiagnostic(ctx context.Context, client *controller.Client, desired Desired, reason string, diagnosticErr error) (time.Duration, error) {
+	interval, rejectErr := reject(ctx, client, desired, reason)
+	return interval, errors.Join(rejectErr, diagnosticErr)
 }
 
 // Renew is independent of configuration and heartbeat success. Persist before switching clients.
@@ -348,28 +412,15 @@ func Renew(ctx context.Context, client *controller.Client, state *identity.State
 func reconcileWireguard(ctx context.Context, client *controller.Client, state *identity.State, directory string, plan network.Plan) error {
 	status := "disabled"
 	handshakes := []network.Handshake{}
+	bgpPeers := []network.BGPPeerObservation{}
 	var applyErr error
 	if state.WireGuardEnabled {
-		origin, parseErr := url.Parse(client.URL)
-		if parseErr != nil {
-			return errors.New("invalid management origin")
+		engine, err := NetworkEngine(ctx, state, directory, client.URL)
+		if err != nil {
+			return err
 		}
-		resolveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		addresses, resolveErr := net.DefaultResolver.LookupIPAddr(resolveCtx, origin.Hostname())
-		cancel()
-		if resolveErr != nil {
-			return errors.New("management address safety check failed")
-		}
-		for _, tunnel := range plan.Tunnels {
-			_, subnet, _ := net.ParseCIDR(tunnel.Address)
-			for _, address := range addresses {
-				if subnet.Contains(address.IP) {
-					return errors.New("tunnel overlaps controller management address")
-				}
-			}
-		}
-		engine := network.Engine{Directory: directory, NodeID: state.NodeID}
 		applyErr = engine.Apply(ctx, plan, func(checkCtx context.Context) error {
+			client.HTTP.CloseIdleConnections()
 			return client.Request(checkCtx, http.MethodGet, "/api/agent/v1/desired", nil, nil)
 		})
 		status = "failed"
@@ -377,14 +428,37 @@ func reconcileWireguard(ctx context.Context, client *controller.Client, state *i
 			handshakes, applyErr = engine.Handshakes(ctx, plan)
 			if applyErr == nil {
 				status = "applied"
+				if plan.Routing != nil && plan.Routing.BGP != nil {
+					bgpPeers, applyErr = engine.BGPPeers(ctx, plan)
+					if applyErr != nil {
+						bgpPeers = make([]network.BGPPeerObservation, 0, len(plan.Routing.BGP.Peers))
+						for _, peer := range plan.Routing.BGP.Peers {
+							bgpPeers = append(bgpPeers, network.BGPPeerObservation{Address: peer.Address, State: "Unavailable"})
+						}
+						applyErr = nil
+					}
+				}
 			}
 		}
 	}
 	if status != "applied" {
 		handshakes = []network.Handshake{}
+		bgpPeers = []network.BGPPeerObservation{}
 	}
 	reportErr := client.Request(ctx, http.MethodPost, "/api/agent/v1/wireguard-status", map[string]any{
-		"revision": state.Revision, "checksum": state.Checksum, "status": status, "handshakes": handshakes,
+		"revision": state.Revision, "checksum": state.Checksum, "status": status, "handshakes": handshakes, "bgpPeers": bgpPeers,
 	}, nil)
 	return errors.Join(applyErr, reportErr)
+}
+
+// NetworkEngine shares local authorization and controller safety inputs between
+// startup recovery and reconciliation. Controller intent cannot enable routing.
+func NetworkEngine(ctx context.Context, state *identity.State, directory, origin string) (network.Engine, error) {
+	addresses, err := network.ManagementAddresses(ctx, directory, origin)
+	if err != nil {
+		return network.Engine{}, err
+	}
+	return network.Engine{Directory: directory, NodeID: state.NodeID,
+		AllowRouting: state.RoutingEnabled, LANInterface: state.LANInterface,
+		ManagementIPs: addresses}, nil
 }

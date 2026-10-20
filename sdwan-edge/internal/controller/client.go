@@ -12,11 +12,123 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const maxResponseBytes = 64 * 1024
+const maxRetryAfter = 60 * time.Second
+
+type RequestError struct {
+	Operation  string
+	Code       string
+	StatusCode int
+	RequestID  string
+	RetryAfter time.Duration
+	Cause      error
+}
+
+func (e *RequestError) Error() string {
+	switch e.Code {
+	case "bad_request", "unauthorized", "forbidden", "not_found", "conflict", "rate_limited", "server_error", "http_error":
+		return fmt.Sprintf("controller rejected request (HTTP %d)", e.StatusCode)
+	case "request_cancelled":
+		return "controller request cancelled"
+	case "transport_failed":
+		return "controller connection failed"
+	case "response_failed":
+		return "controller response failed"
+	case "response_too_large":
+		return "controller response too large"
+	case "invalid_response":
+		return "invalid controller response"
+	default:
+		return "controller request failed"
+	}
+}
+
+func (e *RequestError) Unwrap() error { return e.Cause }
+
+func operationFor(method, path string) string {
+	path, _, _ = strings.Cut(path, "?")
+	operations := map[string]string{
+		"GET /api/agent/v1/desired":             "desired.read",
+		"POST /api/agent/v1/heartbeat":          "heartbeat.write",
+		"POST /api/agent/v1/ack":                "config.acknowledge",
+		"POST /api/agent/v1/renew":              "certificate.renew",
+		"POST /api/agent/v1/device-state":       "device-state.report",
+		"POST /api/agent/v1/wireguard-key":      "wireguard.key-register",
+		"POST /api/agent/v1/wireguard-status":   "wireguard.report",
+		"POST /api/agent/v1/enroll":             "device.enroll",
+		"POST /api/agent/v1/enrollment/recover": "device.recover",
+	}
+	if operation := operations[method+" "+path]; operation != "" {
+		return operation
+	}
+	return "management.request"
+}
+
+func safeRequestID(value string) string {
+	if len(value) != 36 {
+		return ""
+	}
+	for i, char := range value {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if char != '-' {
+				return ""
+			}
+			continue
+		}
+		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return ""
+		}
+	}
+	return value
+}
+
+func safeRetryAfter(value string, now time.Time) time.Duration {
+	if seconds, err := strconv.ParseUint(value, 10, 64); err == nil {
+		if seconds > uint64(maxRetryAfter/time.Second) {
+			return maxRetryAfter
+		}
+		delay := time.Duration(seconds) * time.Second
+		if delay > maxRetryAfter {
+			return maxRetryAfter
+		}
+		return delay
+	}
+	if retryAt, err := http.ParseTime(value); err == nil && retryAt.After(now) {
+		delay := retryAt.Sub(now)
+		if delay > maxRetryAfter {
+			return maxRetryAfter
+		}
+		return delay
+	}
+	return 0
+}
+
+func statusCodeName(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "bad_request"
+	case http.StatusUnauthorized:
+		return "unauthorized"
+	case http.StatusForbidden:
+		return "forbidden"
+	case http.StatusNotFound:
+		return "not_found"
+	case http.StatusConflict:
+		return "conflict"
+	case http.StatusTooManyRequests:
+		return "rate_limited"
+	default:
+		if status >= 500 {
+			return "server_error"
+		}
+		return "http_error"
+	}
+}
 
 type Client struct {
 	URL  string
@@ -92,39 +204,46 @@ func New(address, serverCA, cert, key string, allowLocal bool) (*Client, error) 
 }
 
 func (c *Client) Request(ctx context.Context, method, path string, input, output any) error {
+	operation := operationFor(method, path)
 	var body io.Reader
 	if input != nil {
 		encoded, err := json.Marshal(input)
 		if err != nil {
-			return err
+			return &RequestError{Operation: operation, Code: "request_encoding_failed", Cause: errors.New("invalid request data")}
 		}
 		body = bytes.NewReader(encoded)
 	}
 	request, err := http.NewRequestWithContext(ctx, method, c.URL+path, body)
 	if err != nil {
-		return err
+		return &RequestError{Operation: operation, Code: "request_encoding_failed", Cause: errors.New("invalid request")}
 	}
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
 	response, err := c.HTTP.Do(request)
 	if err != nil {
-		return errors.New("controller connection failed")
+		if ctx.Err() != nil {
+			return &RequestError{Operation: operation, Code: "request_cancelled", Cause: ctx.Err()}
+		}
+		return &RequestError{Operation: operation, Code: "transport_failed"}
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil {
-		return errors.New("controller response failed")
+		return &RequestError{Operation: operation, Code: "response_failed"}
 	}
 	if len(data) > maxResponseBytes {
-		return errors.New("controller response too large")
+		return &RequestError{Operation: operation, Code: "response_too_large"}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("controller rejected request (HTTP %d)", response.StatusCode)
+		return &RequestError{
+			Operation: operation, Code: statusCodeName(response.StatusCode), StatusCode: response.StatusCode,
+			RequestID: safeRequestID(response.Header.Get("X-Request-ID")), RetryAfter: safeRetryAfter(response.Header.Get("Retry-After"), time.Now()),
+		}
 	}
 	if output != nil {
 		if err = json.Unmarshal(data, output); err != nil {
-			return errors.New("invalid controller response")
+			return &RequestError{Operation: operation, Code: "invalid_response"}
 		}
 	}
 	return nil

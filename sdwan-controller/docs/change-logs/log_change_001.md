@@ -1,0 +1,11 @@
+# PacketMotion Fabric — Change Log 001
+## AGENT-RELEASE-UPGRADE-001 — 2026-10-16 — Codex /root
+
+- Status: signed 0.2.0 bundle published to controller assets; live device upgrade not run.
+- Summary/reason: Built the Linux amd64/arm64 0.2.0 agent release and rendered installer with the repository signing key. The release includes device-state reporting needed by the supplied Edge. Confirmed the signed manifest verifies and contains checksums for both binaries and the service unit. Reviewed in-place upgrade behavior: it preserves enrolled identity and restores the previous binary if the service fails to start. The Edge's WireGuard drop-in is separate from the base unit and is preserved by the installer. No controller-to-agent software-install operation or remote shell exists, so the actual host must initiate installation.
+- Files: `sdwan-controller/public/fabric/releases/0.2.0/*`; `sdwan-controller/public/fabric/edge.sh`; `docs/operations/wireguard-tunnels.md`; `docs/operations/management-channel.md`; `docs/STATUS.md`; `sdwan-edge/README.md`; this log.
+- Checks actually run: Go 1.27.2 release build PASS; OpenSSL manifest signature verification PASS; SHA-256 hashes computed for both architecture binaries and service unit; `git diff --check` PASS. No installer was run and no live agent/device was restarted.
+- UI/network impact: Publishes signed agent download assets and updates operational documentation. No UI, database, or live device/network state changed.
+- Risks/limits: Release assets are local controller files; whether they are already served by the running deployment is UNVERIFIED. Device upgrade and fresh report are UNVERIFIED. Upgrade requires an operator with root access on the Edge and the HTTPS agent controller origin; retain the existing WireGuard drop-in.
+- Rollback: Restore the previous `public/fabric/edge.sh` and remove the 0.2.0 release directory only if no deployed installer depends on it; keep prior versioned releases immutable. Device rollback uses the installer’s previous-binary recovery on service start failure; otherwise recover locally from console.
+- Next: Initiate the signed in-place upgrade on the Edge host, then request a fresh current-state report and verify a new agent heartbeat/report.

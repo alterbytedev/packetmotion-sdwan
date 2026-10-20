@@ -35,14 +35,16 @@ import { ControllerHealthCard } from '@/components/fabric/controller-health-card
 import { ControllerSettings } from '@/components/fabric/controller-settings';
 import { BrandLogo } from '@/components/brand-logo';
 import type { Inventory, NodeRecord, OperatorRole } from '@/lib/fabric/types';
+import type { AgentRelease } from '@/lib/fabric/agent-releases';
 import { cn } from '@/lib/utils';
+import { ControllerTimeZoneProvider } from '@/lib/time-zone-context';
+import { formatTime } from '@/lib/date-format';
 
-export const views = ['overview', 'devices', 'telemetry', 'settings'] as const;
+export const views = ['overview', 'devices', 'settings'] as const;
 export type DashboardView = (typeof views)[number];
 const navigation = [
   { view: 'overview', href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   { view: 'devices', href: '/dashboard/devices', label: 'Devices', icon: RouterIcon },
-  { view: 'telemetry', href: '/dashboard/telemetry', label: 'Telemetry', icon: Activity },
 ] as const;
 function RouterIcon({ size = 18 }: { size?: number }) {
   return <Radio size={size} />;
@@ -53,15 +55,19 @@ export function ControllerDashboard({
   view,
   inventory,
   role,
+  timeZone,
   inventoryError,
   selectedDevice,
+  agentReleases = [],
 }: {
   email: string;
   view: DashboardView;
   inventory: Inventory;
   role: OperatorRole;
+  timeZone: string;
   inventoryError?: string;
   selectedDevice?: NodeRecord;
+  agentReleases?: AgentRelease[];
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [desktop, setDesktop] = useState(false);
@@ -144,7 +150,7 @@ export function ControllerDashboard({
     } catch {
       setHealth('error');
     }
-    setCheckedAt(new Date().toLocaleTimeString());
+    setCheckedAt(new Date().toISOString());
   }
 
   const status =
@@ -155,7 +161,11 @@ export function ControllerDashboard({
         : health === 'checking'
           ? 'Checking…'
           : 'Not checked';
+  const newestTelemetry = inventory.nodes
+    .filter((node): node is NodeRecord & { telemetryReceivedAt: string } => Boolean(node.telemetryReceivedAt))
+    .sort((left, right) => Date.parse(right.telemetryReceivedAt) - Date.parse(left.telemetryReceivedAt))[0];
   return (
+    <ControllerTimeZoneProvider timeZone={timeZone}>
     <div className="min-h-screen bg-[#f7f9fa]">
       {mobileOpen && (
         <button
@@ -377,16 +387,16 @@ export function ControllerDashboard({
                     note: 'Fresh heartbeat and latest revision received',
                   },
                   {
-                    title: 'Active configurations',
+                    title: 'Latest agent version',
                     icon: FileSliders,
-                    value: '—',
-                    note: 'Network configuration pending',
+                    value: newestTelemetry?.agentVersion ?? '—',
+                    note: newestTelemetry ? `Reported by ${newestTelemetry.name}` : 'No agent check-in yet',
                   },
                   {
-                    title: 'Network availability',
+                    title: 'Last agent check-in',
                     icon: Activity,
-                    value: '—',
-                    note: 'Awaiting device telemetry',
+                    value: newestTelemetry?.telemetryReceivedAt ? formatTime(newestTelemetry.telemetryReceivedAt, timeZone) : '—',
+                    note: newestTelemetry?.name ?? 'Awaiting device telemetry',
                   },
                 ].map((stat) => (
                   <Card key={stat.title}>
@@ -522,23 +532,22 @@ export function ControllerDashboard({
                 <ControllerHealthCard
                   status={status}
                   checking={health === 'checking'}
-                  checkedAt={checkedAt}
+                  checkedAt={checkedAt ? formatTime(checkedAt, timeZone) : ''}
                   onRefresh={checkHealth}
                   error={health === 'error'}
                 />
                 <Card>
                   <CardHeader>
-                    <CardTitle>Network activity</CardTitle>
-                    <CardDescription>Enrollment, configuration, and device events.</CardDescription>
+                    <CardTitle>Agent check-ins</CardTitle>
+                    <CardDescription>Latest reported software versions and management status.</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="flex items-start gap-3 rounded-lg border border-dashed p-4">
-                      <Activity size={18} className="mt-0.5 shrink-0 text-muted-foreground" />
-                      <p className="text-xs leading-5 text-muted-foreground">
-                        No network events yet. Activity will appear when devices connect and event
-                        storage is enabled.
-                      </p>
-                    </div>
+                  <CardContent className="space-y-2">
+                    {inventory.nodes.slice(0, 5).length ? inventory.nodes.slice(0, 5).map((node) => (
+                      <Link key={node.id} href={`/dashboard/devices/${node.id}`} className="flex items-center justify-between gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50">
+                        <span className="min-w-0"><span className="block truncate text-xs font-medium">{node.name}</span><span className="mt-1 block text-[11px] text-muted-foreground">{node.lastSeenAt ? formatTime(node.lastSeenAt, timeZone) : 'No check-in'}</span></span>
+                        <Badge className="shrink-0">{node.agentVersion ?? 'Version unknown'}</Badge>
+                      </Link>
+                    )) : <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">Device agent check-ins and versions will appear here.</p>}
                   </CardContent>
                 </Card>
               </div>
@@ -557,22 +566,10 @@ export function ControllerDashboard({
                 </CardContent>
               </Card>
             ) : selectedDevice ? (
-              <DeviceDetails node={selectedDevice} role={role} />
+              <DeviceDetails node={selectedDevice} role={role} agentReleases={agentReleases} />
             ) : (
               <DeviceInventory inventory={inventory} role={role} />
             ))}
-          {view === 'telemetry' && (
-            <div className="grid gap-6 xl:grid-cols-2">
-              <DeviceSelection />
-              <ControllerHealthCard
-                status={status}
-                checking={health === 'checking'}
-                checkedAt={checkedAt}
-                onRefresh={checkHealth}
-                error={health === 'error'}
-              />
-            </div>
-          )}
           {view === 'settings' && <ControllerSettings email={email} roleLabel={roleLabel} role={role} isSuperadmin={role === 'superadmin'} />}
           <footer className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t pt-5 text-[10px] text-muted-foreground">
             <span>SD-WAN Controller · Operator workspace</span>
@@ -583,31 +580,11 @@ export function ControllerDashboard({
         </main>
       </div>
     </div>
+    </ControllerTimeZoneProvider>
   );
 }
 
 const descriptions: Record<Exclude<DashboardView, 'overview'>, string> = {
   devices: 'Manage your edge devices and hubs.',
-  telemetry: 'Understand device connectivity and controller availability.',
   settings: 'Manage your operator session and controller setup.',
 };
-
-function DeviceSelection() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Device telemetry</CardTitle>
-        <CardDescription>
-          Open a device to review its latest check-in and interfaces.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Button asChild variant="outline">
-          <Link href="/dashboard/devices">
-            Browse devices <ArrowRight />
-          </Link>
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}

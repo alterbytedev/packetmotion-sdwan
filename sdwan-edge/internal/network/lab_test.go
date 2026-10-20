@@ -2,13 +2,19 @@ package network
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
+	"packetmotion/fabric-agent/internal/controller"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -67,9 +73,59 @@ func TestNamespaceWireguardLifecycle(t *testing.T) {
 			return data, nil
 		}
 	}
+	run("ip", "link", "set", "lo", "up")
 	edgePID := namespace()
 	hubPIDs := []int{namespace(), namespace()}
 	edge := Engine{Directory: privateDirectory(t), NodeID: "edge", Run: runner(edgePID)}
+	// A separate controller segment stays outside the selected Hub tunnels.
+	run("ip", "link", "add", "controllerwan", "type", "veth", "peer", "name", "management")
+	run("ip", "link", "set", "management", "netns", strconv.Itoa(edgePID))
+	run("ip", "address", "add", "192.168.244.1/24", "dev", "controllerwan")
+	run("ip", "link", "set", "controllerwan", "up")
+	run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "ip", "address", "add", "192.168.244.2/24", "dev", "management")
+	run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "ip", "link", "set", "management", "up")
+	edge.ManagementIPs = []string{"192.168.244.1"}
+	var revision atomic.Int64
+	revision.Store(1)
+	var requests atomic.Int64
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if host != "192.168.244.2" {
+			t.Errorf("controller traffic came from %s", host)
+		}
+		switch r.URL.Path {
+		case "/api/agent/v1/desired":
+			_ = json.NewEncoder(w).Encode(map[string]int64{"revision": revision.Load()})
+		case "/api/agent/v1/heartbeat", "/api/agent/v1/ack":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected management path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+		requests.Add(1)
+	}))
+	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = server.Listener.Close()
+	server.Listener = listener
+	server.Start()
+	t.Cleanup(server.Close)
+	origin := fmt.Sprintf("http://192.168.244.1:%d", listener.Addr().(*net.TCPAddr).Port)
+	management := func() {
+		t.Helper()
+		route := run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "ip", "-j", "route", "get", "192.168.244.1")
+		if !strings.Contains(route, `"dev":"management"`) {
+			t.Fatalf("controller route changed: %s", route)
+		}
+		command := exec.CommandContext(ctx, "nsenter", "-t", strconv.Itoa(edgePID), "-n", os.Args[0], "-test.run=^TestNamespaceManagementHTTPHelper$")
+		command.Env = append(os.Environ(), "FABRIC_NAMESPACE_CONTROLLER_URL="+origin, fmt.Sprintf("FABRIC_NAMESPACE_REVISION=%d", revision.Load()))
+		if data, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("management transport failed: %v %s", err, data)
+		}
+	}
+	management()
 	_, edgePublic, err := Key(edge.Directory)
 	if err != nil {
 		t.Fatal(err)
@@ -131,6 +187,14 @@ func TestNamespaceWireguardLifecycle(t *testing.T) {
 		t.Fatal("unsafe plan accepted")
 	}
 	ping("10.250.0.0")
+	management()
+	// An operator-installed route through a tunnel must fail before removal.
+	run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "ip", "route", "add", "192.168.244.1/32", "dev", edgePlan.Tunnels[0].Name)
+	if err = edge.Apply(ctx, Plan{Tunnels: []Tunnel{}}, nil); err == nil {
+		t.Fatal("tunnel management route accepted")
+	}
+	run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "ip", "route", "del", "192.168.244.1/32")
+	management()
 	// Typed LAN apply must preserve management and restore the original NIC state.
 	run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "ip", "link", "add", "lanspare", "type", "dummy")
 	routed := Plan{Tunnels: edgePlan.Tunnels, Routing: &Routing{LAN: LAN{InterfaceName: "lanspare", Address: "10.61.0.1/24", AdvertisedPrefix: "10.61.0.0/24"}, ProtectedPrefixes: []string{"192.0.2.0/24", "192.0.3.0/24"}}}
@@ -139,7 +203,7 @@ func TestNamespaceWireguardLifecycle(t *testing.T) {
 	}
 	edge.AllowRouting = true
 	edge.LANInterface = "lanspare"
-	edge.ManagementIPs = []string{"192.0.2.1"}
+	edge.ManagementIPs = []string{"192.168.244.1"}
 	if err = edge.Apply(ctx, routed, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -256,6 +320,103 @@ func TestNamespaceWireguardLifecycle(t *testing.T) {
 	for _, l := range links {
 		if edge.owns(l) {
 			t.Fatal("removed tunnel still exists")
+		}
+	}
+	revision.Add(1)
+	management()
+	if err = edge.Restore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	management()
+	if err = edge.Apply(ctx, edgePlan, func(context.Context) error { management(); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	revision.Add(1)
+	management()
+	if err = edge.Restore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	management()
+	for _, tunnel := range edgePlan.Tunnels {
+		ping(tunnel.PeerAddress)
+	}
+	if requests.Load() < 18 {
+		t.Fatal("missing management requests across topology transitions")
+	}
+	// Cleanup must refuse an unavailable management path and retain working tunnels.
+	if err = edge.Reset(ctx, func(context.Context) error { return errors.New("offline") }); err == nil {
+		t.Fatal("reset ignored failed management confirmation")
+	}
+	for _, tunnel := range edgePlan.Tunnels {
+		ping(tunnel.PeerAddress)
+	}
+	confirmations := 0
+	if err = edge.Reset(ctx, func(context.Context) error {
+		confirmations++
+		if confirmations == 2 {
+			return errors.New("injected post-cleanup management failure")
+		}
+		return nil
+	}); err == nil {
+		t.Fatal("reset committed despite failed post-cleanup confirmation")
+	}
+	for _, tunnel := range edgePlan.Tunnels {
+		ping(tunnel.PeerAddress)
+	}
+	if !strings.Contains(run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "nft", "list", "tables"), "pmwg"+edge.group()) {
+		t.Fatal("rollback lost isolation guard")
+	}
+	run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "ip", "link", "add", "foreignwg", "type", "wireguard")
+	run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "nft", "add", "table", "inet", "unrelated_reset_test")
+	if err = edge.Reset(ctx, func(context.Context) error { management(); return nil }); err != nil {
+		t.Fatal("confirmed cleanup", err)
+	}
+	management()
+	links, err = edge.links(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range links {
+		if edge.owns(link) {
+			t.Fatal("old owned tunnel survived cleanup")
+		}
+	}
+	if !strings.Contains(run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "ip", "-j", "link", "show", "foreignwg"), "foreignwg") {
+		t.Fatal("foreign WireGuard interface removed")
+	}
+	tables := run("nsenter", "-t", strconv.Itoa(edgePID), "-n", "nft", "list", "tables")
+	if strings.Contains(tables, "pmwg"+edge.group()) || !strings.Contains(tables, "unrelated_reset_test") {
+		t.Fatal("cleanup removed foreign firewall state or retained owned guard")
+	}
+
+}
+
+// Run the real HTTP client from the edge namespace in a separate process.
+func TestNamespaceManagementHTTPHelper(t *testing.T) {
+	origin := os.Getenv("FABRIC_NAMESPACE_CONTROLLER_URL")
+	if origin == "" {
+		t.Skip("namespace helper only")
+	}
+	client, err := controller.New(origin, "", "", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.HTTP.CloseIdleConnections()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var desired struct {
+		Revision int `json:"revision"`
+	}
+	if err = client.Request(ctx, http.MethodGet, "/api/agent/v1/desired", nil, &desired); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := strconv.Atoi(os.Getenv("FABRIC_NAMESPACE_REVISION"))
+	if err != nil || desired.Revision != expected {
+		t.Fatal("desired revision did not synchronize")
+	}
+	for _, path := range []string{"/api/agent/v1/ack", "/api/agent/v1/heartbeat"} {
+		if err = client.Request(ctx, http.MethodPost, path, map[string]int{"revision": desired.Revision}, nil); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

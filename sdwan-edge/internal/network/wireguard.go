@@ -57,9 +57,10 @@ type Engine struct {
 	ManagementIPs []string
 }
 type link struct {
-	Name  string `json:"ifname"`
-	Alias string `json:"ifalias"`
-	Group string `json:"group"`
+	Name  string   `json:"ifname"`
+	Alias string   `json:"ifalias"`
+	Group string   `json:"group"`
+	Flags []string `json:"flags"`
 	Info  struct {
 		Kind string `json:"info_kind"`
 	} `json:"linkinfo"`
@@ -226,6 +227,9 @@ func (e Engine) preflight(ctx context.Context, plan Plan) error {
 	}
 	links, err := e.links(ctx)
 	if err != nil {
+		return err
+	}
+	if err := e.validateManagement(ctx, plan, links); err != nil {
 		return err
 	}
 	owned := map[string]bool{}
@@ -459,6 +463,9 @@ func (e Engine) applyLocked(ctx context.Context, plan Plan, confirm func(context
 	applyCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	err = e.replace(applyCtx, plan, key)
+	if err == nil {
+		err = e.validateManagement(applyCtx, plan, nil)
+	}
 	if err == nil && confirm != nil {
 		err = confirm(applyCtx)
 	}

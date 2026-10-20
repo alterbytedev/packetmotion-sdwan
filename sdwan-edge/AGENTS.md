@@ -6,7 +6,7 @@ Read [shared rules](../AGENTS.md), the [codebase map](../docs/development/codeba
 
 - This directory holds one shared Go 1.27.2 agent for Edge (`branch` on the wire) and Hub.
 - `cmd/fabric-agent/` owns CLI configuration and scheduling; `internal/controller/` owns HTTP/TLS; `internal/identity/` owns private state; `internal/agent/` owns management workflows.
-- Enrollment, heartbeat/interface telemetry, certificate renewal, checksummed desired-revision staging and received/rejected acknowledgements are implemented. Source 0.2.0 adds locally gated WireGuard adjacency apply/recovery and handshake observations in `internal/network/`; see [activation and evidence limits](../docs/operations/wireguard-tunnels.md). An owned nftables guard blocks tunnel transit. General FRR/nftables policy, LAN forwarding, routed failover and production/fleet deployment remain pending; supplied Debian lab evidence is recorded in the change log.
+- Enrollment, heartbeat/interface telemetry, certificate renewal, checksummed desired-revision staging and received/rejected acknowledgements are implemented. Source 0.2.0 adds locally gated WireGuard adjacency apply/recovery. Source and signed 0.3.0 add a schema-v3 typed LAN/FRR BGP plan over selected WireGuard peers, explicit local `--enable-routing --lan-interface` opt-in, BGP peer observations and CLI version/help; generated release assets are in controller public files. The main-branch release workflow needs the `FABRIC_RELEASE_SIGNING_KEY` secret and pushes generated assets for the controller's next deployment. The owned nftables guard still blocks tunnel transit. Appliance BGP deployment and isolated end-to-end evidence remain pending; see [routed LAN delivery](../docs/operations/routed-lan.md).
 
 ## Safety and readability
 
@@ -32,10 +32,10 @@ Record actual results and UNVERIFIED gaps. Append change logs through the root l
 
 ## Routed LAN work in progress
 
-`internal/network/` now contains an engine-level LAN/FRR transaction behind
-`Engine.AllowRouting` and a specific `LANInterface`. Controller activation and
-CLI wiring are pending; schema 2 rejects routing intent. Preserve the existing
-FRR management routes and global configuration. Inspect
+`internal/network/` contains an engine-level LAN/FRR transaction behind
+`Engine.AllowRouting` and a specific `LANInterface`. Controller schema-v3
+activation and CLI wiring are implemented in signed release 0.3.0. Preserve
+existing FRR management routes and global configuration. Inspect
 [ADR 0005](../docs/adr/0005-routed-lan-ownership.md) before changing ownership or
 privileges. The opt-in `FABRIC_ROUTING_LAB=1` lifecycle test must run under both a
 private mount namespace and a private network namespace; it starts separate FRR

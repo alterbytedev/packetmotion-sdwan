@@ -140,7 +140,7 @@ func (e Engine) protectedInterfaces(ctx context.Context, plan Plan) (map[string]
 		}
 		data, err := e.Run(ctx, "ip", []string{"-j", "route", "get", addr.String()}, "")
 		if err != nil {
-			continue
+			return nil, errors.New("management or underlay route unavailable")
 		}
 		var routes []struct {
 			Device string `json:"dev"`

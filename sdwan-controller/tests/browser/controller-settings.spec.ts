@@ -34,3 +34,36 @@ test('admin cannot view or change the lab HTTP host allowlist', async ({ page })
     data: { hosts: ['192.168.160.200'] },
   })).status()).toBe(403);
 });
+
+test('superadmin changes the controller time zone and admins cannot change it', async ({ page }) => {
+  await login(page);
+  await database(async (pool) => {
+    await pool.query("UPDATE operators SET role='superadmin' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]);
+  });
+  try {
+    await page.goto('/dashboard/settings');
+    await expect(page.getByRole('heading', { name: 'Controller time zone' })).toBeVisible();
+    await page.getByLabel('IANA time zone').fill('Asia/Jakarta');
+    await page.getByRole('button', { name: 'Save time zone', exact: true }).click();
+    await expect(page.getByText('Controller time zone saved.')).toBeVisible();
+    expect((await (await page.request.get('/api/operator/controller-settings/time-zone')).json()).timeZone).toBe('Asia/Jakarta');
+    await page.reload();
+    await expect(page.getByLabel('IANA time zone')).toHaveValue('Asia/Jakarta');
+
+    await database(async (pool) => {
+      await pool.query("UPDATE operators SET role='admin' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]);
+    });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Controller time zone' })).toHaveCount(0);
+    expect((await page.request.put('/api/operator/controller-settings/time-zone', {
+      headers: { Origin: 'http://127.0.0.1:3107', 'Content-Type': 'application/json' },
+      data: { timeZone: 'UTC', expectedVersion: 2 },
+    })).status()).toBe(403);
+  } finally {
+    await database(async (pool) => {
+      await pool.query("UPDATE operators SET role='admin' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]);
+      await pool.query("UPDATE controller_timezone SET time_zone='UTC',version=version+1 WHERE singleton=TRUE");
+      await pool.query("DELETE FROM audit_events WHERE action='controller.timezone_updated' AND actor_email=$1", [process.env.FABRIC_TEST_EMAIL]);
+    });
+  }
+});

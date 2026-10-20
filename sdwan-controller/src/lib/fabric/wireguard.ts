@@ -4,6 +4,7 @@ import { getDatabase } from '../db';
 import { authorize, authorizeSuperadmin, FabricError } from './authorization';
 import { mutate } from './inventory';
 import { lockTopology, publishWireguardPlans } from './wireguard-plan';
+import { nodeIdInput } from './validation';
 import { hubEndpoint, tunnelObject, tunnelPool, tunnelVersion, wireguardPublicKey } from './wireguard-validation';
 import type { Actor } from './types';
 
@@ -49,6 +50,7 @@ export async function saveTunnelSettings(actor: Actor | null, value: unknown) {
 
 export async function readWireguardDevice(actor: Actor | null, nodeId: string) {
   authorize(actor);
+  nodeId = nodeIdInput(nodeId);
   const db = getDatabase();
   const node = await db.query(`SELECT n.id,n.kind,n.revoked_at IS NOT NULL AS revoked,
     d.public_key AS "publicKey",host(d.endpoint) AS endpoint,d.base_port AS "basePort",
@@ -61,7 +63,11 @@ export async function readWireguardDevice(actor: Actor | null, nodeId: string) {
     l.network::text,host(l.network::inet) AS "hubAddress",host(l.network::inet+1) AS "edgeAddress",
     l.hub_port AS "hubPort" FROM wireguard_links l JOIN nodes n ON n.id=CASE WHEN l.edge_id=$1 THEN l.hub_id ELSE l.edge_id END
     WHERE (l.edge_id=$1 OR l.hub_id=$1) AND l.active ORDER BY l.id`, [nodeId]);
-  const observed = await db.query('SELECT revision,status,handshakes,received_at::text AS "receivedAt" FROM wireguard_observed WHERE node_id=$1', [nodeId]);
+  // to_jsonb keeps the read compatible while migration 0018 is rolling out: an
+  // absent additive column resolves to NULL instead of failing the whole panel.
+  const observed = await db.query(`SELECT revision,status,handshakes,
+    COALESCE(to_jsonb(wireguard_observed)->'bgp_peers','[]'::jsonb) AS "bgpPeers",
+    received_at::text AS "receivedAt" FROM wireguard_observed WHERE node_id=$1`, [nodeId]);
   const desired = await db.query('SELECT max(revision) AS revision FROM desired_configs WHERE node_id=$1', [nodeId]);
   return { ...node.rows[0], hubs: hubs.rows, links: links.rows, observed: observed.rows[0] ?? null, desiredRevision: desired.rows[0]?.revision ?? null };
 }
@@ -128,7 +134,7 @@ export async function saveWireguardDevice(actor: Actor | null, nodeId: string, v
       await client.query('UPDATE wireguard_links SET active=(hub_id=ANY($2::uuid[])) WHERE edge_id=$1', [nodeId, hubIds]);
     }
     await client.query('UPDATE wireguard_devices SET version=version+1 WHERE node_id=$1', [nodeId]);
-    await publishWireguardPlans(client, affected);
+    await publishWireguardPlans(client, affected, fresh.email);
     await audit(client, fresh, 'wireguard.device_updated', nodeId);
     return { saved: true, version: version + 1 };
   });

@@ -40,7 +40,7 @@ test('migration is repeatable, preserves credentials and detects modified applie
     before.rows,
   );
   const migrations = await pool.query('SELECT * FROM controller_migrations ORDER BY name');
-  assert.equal(migrations.rowCount, 11);
+  assert.equal(migrations.rowCount, 19);
   const original = migrations.rows[0].checksum;
   await pool.query(
     "UPDATE controller_migrations SET checksum = 'tampered' WHERE name = '0001_inventory_roles_audit.sql'",

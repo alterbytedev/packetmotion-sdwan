@@ -298,4 +298,42 @@ func TestNamespaceRoutedLANLifecycle(t *testing.T) {
 	if err != nil || strings.Contains(after, "router bgp") || !strings.Contains(after, "ip route 0.0.0.0/0 192.0.2.1 edgewan") {
 		t.Fatal("BGP cleanup affected unrelated management config")
 	}
+	// Removing the last Hub and restoring an empty journal must retain management.
+	if err = edge.Restore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = edge.validateManagement(ctx, Plan{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = edge.Apply(ctx, edgePlan, nil); err != nil {
+		t.Fatal("reselect Hub", err)
+	}
+	if err = edge.Restore(ctx); err != nil {
+		t.Fatal("restore reselected Hub", err)
+	}
+	wait(func() bool {
+		peers, err := edge.BGPPeers(ctx, edgePlan)
+		return err == nil && len(peers) == 1 && peers[0].State == "Established"
+	}, "BGP did not recover after Hub reselection")
+	after, err = edge.runningFRR(ctx)
+	if err != nil || !strings.Contains(after, "ip route 0.0.0.0/0 192.0.2.1 edgewan") {
+		t.Fatal("reselection affected management static route")
+	}
+	if err = edge.Reset(ctx, func(context.Context) error { return nil }); err != nil {
+		t.Fatal("routed reset", err)
+	}
+	after, err = edge.runningFRR(ctx)
+	if err != nil || strings.Contains(after, "router bgp") || !strings.Contains(after, "ip route 0.0.0.0/0 192.0.2.1 edgewan") {
+		t.Fatal("reset did not preserve management FRR state")
+	}
+	addresses, err := edge.addresses(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range addresses {
+		if link.Name == "edgelan" && len(ipv4Addresses(link)) != 0 {
+			t.Fatal("owned LAN address survived reset")
+		}
+	}
+
 }

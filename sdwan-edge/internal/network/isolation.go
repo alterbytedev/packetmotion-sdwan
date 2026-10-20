@@ -10,7 +10,9 @@ import (
 // Isolate only this node's interface group at the forward hook. Input/output
 // management traffic and forwarding through unrelated interfaces are unchanged.
 // The nft transaction replaces only a table bearing our exact ownership comment.
-func (e Engine) ensureIsolation(ctx context.Context) error {
+func (e Engine) ensureIsolation(ctx context.Context) error { return e.reconcileIsolation(ctx, false) }
+func (e Engine) removeIsolation(ctx context.Context) error { return e.reconcileIsolation(ctx, true) }
+func (e Engine) reconcileIsolation(ctx context.Context, remove bool) error {
 	name := "pmwg" + e.group()
 	comment := "PacketMotion WireGuard " + e.group()
 	data, err := e.Run(ctx, "nft", []string{"-j", "list", "tables"}, "")
@@ -61,6 +63,13 @@ func (e Engine) ensureIsolation(ctx context.Context) error {
 			return errors.New("firewall table name is already owned")
 		}
 		script = "delete table inet " + name + "\n"
+	}
+	if remove {
+		if !exists {
+			return nil
+		}
+		_, err = e.Run(ctx, "nft", []string{"-f", "/dev/stdin"}, script)
+		return err
 	}
 	script += fmt.Sprintf("table inet %s {\n comment \"%s\";\n chain forward {\n type filter hook forward priority -300; policy accept;\n meta iifgroup %s drop;\n meta oifgroup %s drop;\n }\n}\n", name, comment, e.group(), e.group())
 	_, err = e.Run(ctx, "nft", []string{"-f", "/dev/stdin"}, script)

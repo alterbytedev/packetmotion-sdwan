@@ -1,0 +1,10 @@
+# Lab-only example. Confirm this is a dedicated LAN interface and has no
+# management/underlay routes before installing the drop-in.
+# Review frrvty membership: it grants broad access to FRR's local CLI socket.
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/fabric-agent run --state-dir /var/lib/packetmotion --enable-wireguard --enable-routing --lan-interface ens34
+SupplementaryGroups=frrvty
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

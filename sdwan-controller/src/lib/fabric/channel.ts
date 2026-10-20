@@ -6,13 +6,14 @@ import { mutate } from './inventory';
 import { auditCreation } from './audit';
 import { lockTopology, wireguardPlan } from './wireguard-plan';
 import { waitForRevision } from './revision-events';
+import { appendCommandEvent, recordCommandPublication } from './command-history';
 import type { Actor } from './types';
 
 // Preserve the existing channel import boundary for routes and integration callers.
 export { recordHeartbeat, readTelemetry } from './telemetry';
 
 export type DeviceConfig = {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   wireguard?: Awaited<ReturnType<typeof wireguardPlan>>;
   deviceKind: 'branch' | 'hub';
   mode: 'gateway' | 'subnet-router';
@@ -49,11 +50,13 @@ export async function waitForDesiredConfig(
   knownChecksum: string | null,
   timeoutMs: number,
   signal: AbortSignal,
+  extraReady: () => Promise<boolean> = async () => false,
 ) {
   return waitForRevision(nodeId, timeoutMs, signal, async () => {
     const current = await desiredConfig(nodeId, knownRevision, knownChecksum);
     const emptyKnownState = current.revision === 0 && current.unchanged === true;
-    return { value: current, changed: !current.unchanged && !emptyKnownState };
+    const changed = !current.unchanged && !emptyKnownState;
+    return { value: current, changed: changed || await extraReady() };
   });
 }
 
@@ -90,9 +93,9 @@ export async function publishConfig(actor: Actor | null, nodeId: string, value: 
       lanPrefix: node.rows[0].prefix,
       pollIntervalSeconds: Number(input.pollIntervalSeconds),
     };
-    if (prior.rows[0] && JSON.parse(prior.rows[0].payload).schemaVersion === 2) {
-      payload.schemaVersion = 2;
+    if (prior.rows[0] && JSON.parse(prior.rows[0].payload).schemaVersion >= 2) {
       payload.wireguard = await wireguardPlan(client, nodeId);
+      payload.schemaVersion = payload.wireguard.routing ? 3 : 2;
     }
     const serialized = JSON.stringify(payload);
     const checksum = createHash('sha256').update(serialized).digest('hex');
@@ -100,6 +103,8 @@ export async function publishConfig(actor: Actor | null, nodeId: string, value: 
       'INSERT INTO desired_configs(node_id,revision,payload,checksum) VALUES($1,$2,$3,$4)',
       [nodeId, revision + 1, serialized, checksum],
     );
+    await recordCommandPublication(client, nodeId, revision + 1, payload.wireguard ? 'wireguard' : 'desired_config', fresh.email,
+      `Desired configuration revision ${revision + 1} published.`, serialized);
     await client.query('SELECT pg_notify($1,$2)', [
       'fabric_desired_revision',
       JSON.stringify({ nodeId, revision: revision + 1 }),
@@ -147,6 +152,7 @@ export async function acknowledgeConfig(nodeId: string, value: unknown) {
       'INSERT INTO config_acknowledgements(node_id,revision,status) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
       [nodeId, input.revision, input.status],
     );
+    await appendCommandEvent(client, nodeId, Number(input.revision), input.status as 'received' | 'rejected');
     await client.query('COMMIT');
     return { accepted: true };
   } catch (error) {

@@ -6,6 +6,7 @@ import { Feedback } from '@/components/ui/feedback';
 
 export type EnrollmentDetails = {
   token: string;
+  nodeId?: string;
   expiresAt: string;
   controllerUrl?: string | null;
   allowInsecureHttp?: boolean;
@@ -30,7 +31,7 @@ export function EnrollmentInstructions({
     : null;
   const needsServerCaPin = allowHttp && !local;
   const installCommand = origin
-    ? `curl -fsSLo install.sh ${origin}/fabric/edge.sh && printf '%s\\n' '${enrollment.token}' | sudo bash install.sh --controller ${origin}${allowHttp ? ' --allow-insecure-local' : ''}${serverCaSha256 ? ` --server-ca-sha256 ${serverCaSha256}` : ''} --token-stdin`
+    ? `curl -fsSLo install.sh ${origin}/fabric/edge.sh && printf '%s\\n' '${enrollment.token}' | sudo bash install.sh --controller ${origin}${allowHttp ? ' --allow-insecure-local' : ''}${serverCaSha256 ? ` --server-ca-sha256 ${serverCaSha256}` : ''}${enrollment.nodeId ? ` --expected-node-id ${enrollment.nodeId}` : ''} --token-stdin`
     : '';
   return (
     <section
@@ -77,6 +78,14 @@ export function EnrollmentInstructions({
         </Feedback>
       )}
       {copyError && <Feedback tone="error">{copyError}</Feedback>}
+      <p className="text-xs leading-6 text-muted-foreground">
+        Reusing a Debian appliance? Archiving its dashboard entry revokes access but leaves the local
+        identity on disk. If it belongs to another device, the installer offers a confirmed reset with
+        a private backup and cleanup of old agent-owned networking. Press Enter to cancel.
+        Replacement starts in management-only mode; review local networking permissions afterward.
+      </p>
+      <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-3 text-xs">{`sudo systemctl show fabric-agent -p ActiveState -p SubState -p Result -p ExecMainStatus;
+sudo journalctl -u fabric-agent -n 50 --no-pager`}</pre>
       {origin ? (
         <>
           <p className="text-xs text-muted-foreground">

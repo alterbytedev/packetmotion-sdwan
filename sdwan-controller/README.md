@@ -108,6 +108,10 @@ The read-only `/diagnosticlogs` page is available only to superadmins through th
 
 Treat diagnostic output as sensitive operational data. See [Runtime error reports](#runtime-error-reports) and the [troubleshooting guide](../docs/operations/runtime-error-troubleshooting.md).
 
+Superadmins can also open a device's **Configuration sources** tab to request a short-lived, device-reported WireGuard state snapshot and review the known state-file paths. This is separate from the controller-published raw configuration in Command history. Reports use the existing outbound agent channel, expire after 24 hours, and exclude private key contents. FRR and general nftables are reference-only until their typed device operations are implemented.
+
+Superadmins can set the controller-wide display time zone in **Settings → Controller time zone** using an IANA name such as `America/Los_Angeles`. It changes timestamp presentation across dashboard and diagnostic views; stored timestamps and API instants remain UTC. UTC is the default. Apply controller migration 0017 before deploying this setting.
+
 ### Tests and verification
 
 | Command | Purpose |

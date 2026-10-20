@@ -6,6 +6,62 @@
     "description": "Single-customer Next.js controller, operator inventory and outbound HTTPS/mTLS management agent MVP. Config received is not network applied."
   },
   "paths": {
+    "/api/operator/nodes/{id}/connection-status": {
+      "get": {
+        "operationId": "deviceConnectionStatus",
+        "description": "Authenticated operator-only lifecycle observations for a non-archived device: token availability/expiry, accepted enrollment, last heartbeat, current revision acknowledgement and at most ten safe lifecycle summaries. Not a live appliance probe; disconnected agent failures are not available here. Never exposes runtime logs, tokens, hashes, certificates or stacks.",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Timestamped controller observations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionDiagnostics"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/ready": {
+      "get": {
+        "operationId": "controllerReadiness",
+        "description": "Read-only readiness check. Requires PostgreSQL and the core agent-management tables and columns for device identity, desired revisions, acknowledgements and heartbeat telemetry. Optional diagnostic and command-history tables do not gate readiness. Returns only a dependency category and request ID when not ready.",
+        "responses": {
+          "200": { "description": "Controller database and required management schema are ready." },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/api/branding/logo": {
       "get": {
         "operationId": "getBrandLogo",
@@ -427,6 +483,9 @@
               }
             }
           },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
           "401": {
             "$ref": "#/components/responses/Error"
           },
@@ -434,9 +493,6 @@
             "$ref": "#/components/responses/Error"
           },
           "503": {
-            "$ref": "#/components/responses/Error"
-          },
-          "400": {
             "$ref": "#/components/responses/Error"
           }
         },
@@ -669,7 +725,7 @@
             "deviceCertificate": []
           }
         ],
-        "description": "Identity/node scope comes from mTLS; no caller-selected node ID. Optional revision and checksum return an unchanged marker only when both match; wait holds the authenticated request for up to 25 seconds and returns promptly when a newer durable revision is published. Older clients continue receiving the complete payload.",
+        "description": "Identity/node scope comes from mTLS; no caller-selected node ID. Optional revision and checksum return an unchanged marker only when both match; wait holds the authenticated request for up to 25 seconds and returns promptly when a newer durable revision is published or a pending device-state request notification wakes it. Older clients continue receiving the complete payload. A pending superadmin device-state request may accompany any desired response; the durable request row is authoritative if a notification is lost.",
         "responses": {
           "200": {
             "description": "Accepted",
@@ -903,12 +959,19 @@
           "name": "id",
           "in": "path",
           "required": true,
-          "schema": { "type": "string", "format": "uuid" }
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
         }
       ],
       "patch": {
         "operationId": "renameOperatorDevice",
-        "security": [{ "operatorSession": [] }],
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
         "description": "Admin only; same-origin Origin, JSON and 8192-byte limit required. Renames an active Edge or Hub; the name must be unique within its site.",
         "requestBody": {
           "required": true,
@@ -917,25 +980,51 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["name"],
-                "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 100 } }
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
               }
             }
           }
         },
         "responses": {
-          "201": { "description": "Device renamed." },
-          "400": { "$ref": "#/components/responses/Error" },
-          "401": { "$ref": "#/components/responses/Error" },
-          "403": { "$ref": "#/components/responses/Error" },
-          "404": { "$ref": "#/components/responses/Error" },
-          "409": { "$ref": "#/components/responses/Error" },
-          "503": { "$ref": "#/components/responses/Error" }
+          "201": {
+            "description": "Device renamed."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "delete": {
         "operationId": "archiveOperatorDevice",
-        "security": [{ "operatorSession": [] }],
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
         "description": "Admin only; same-origin Origin required. Archives an Edge or Hub, revokes its credentials, and withdraws active peer plans. Audit history and WireGuard address/port reservations are retained. Local tunnel state on a disconnected device may persist until local cleanup.",
         "requestBody": {
           "required": true,
@@ -951,11 +1040,21 @@
           }
         },
         "responses": {
-          "201": { "description": "Device archived." },
-          "401": { "$ref": "#/components/responses/Error" },
-          "403": { "$ref": "#/components/responses/Error" },
-          "404": { "$ref": "#/components/responses/Error" },
-          "503": { "$ref": "#/components/responses/Error" }
+          "201": {
+            "description": "Device archived."
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
@@ -1207,6 +1306,166 @@
             "$ref": "#/components/responses/Error"
           },
           "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}/command-history": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "page",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        {
+          "name": "pageSize",
+          "in": "query",
+          "schema": {
+            "type": "integer",
+            "enum": [
+              10,
+              25,
+              50,
+              100
+            ],
+            "default": 25
+          }
+        },
+        {
+          "name": "status",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "published",
+              "delivered",
+              "received",
+              "rejected",
+              "applied",
+              "failed",
+              "disabled"
+            ]
+          }
+        },
+        {
+          "name": "type",
+          "in": "query",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "desired_config",
+              "wireguard",
+              "frr",
+              "nftables"
+            ]
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getDeviceCommandHistory",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Superadmin only. Lists bounded, paginated controller publication and device-reported lifecycle events. Configuration snapshots are loaded separately on demand; secrets are excluded.",
+        "responses": {
+          "200": {
+            "description": "Command history page."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}/command-history/config": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "name": "operationId",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getDeviceCommandConfigSnapshot",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Superadmin only. Returns the bounded raw, secret-free configuration snapshot for one published operation.",
+        "responses": {
+          "200": {
+            "description": "Configuration snapshot.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "operationId",
+                    "rawConfig"
+                  ],
+                  "properties": {
+                    "operationId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "rawConfig": {
+                      "type": "string",
+                      "maxLength": 131072
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
             "$ref": "#/components/responses/Error"
           },
           "503": {
@@ -1536,7 +1795,7 @@
     "/api/agent/v1/wireguard-status": {
       "post": {
         "operationId": "reportWireguardStatus",
-        "description": "Authenticated mTLS device reports local apply separately from received/rejected acknowledgements. Must match latest revision/checksum and exact tunnel names. Applied requires an entry for every tunnel; disabled/failed require empty handshakes. Records latest status and receipt timestamp. No reachability claim.",
+        "description": "Authenticated mTLS device reports local apply separately from received/rejected acknowledgements. Must match latest revision/checksum and exact tunnel names. Applied requires an entry for every tunnel and, for schema-v3 plans, every BGP peer; BGP state and received-prefix counts are reported separately from tunnel handshakes. Disabled/failed require empty observations. Older agents may omit bgpPeers. Records latest status and receipt timestamp. No reachability claim.",
         "security": [
           {
             "deviceCertificate": []
@@ -1769,6 +2028,204 @@
           }
         }
       }
+    },
+    "/api/agent/v1/device-state": {
+      "post": {
+        "operationId": "agentReportDeviceState",
+        "security": [
+          {
+            "deviceCertificate": []
+          }
+        ],
+        "description": "Authenticated mTLS agent response to a pending state request. Accepts only a bounded redacted WireGuard state report; private and preshared keys are excluded.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceStateResponse"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "State response recorded."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/operator/nodes/{id}/device-state": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getDeviceStateReport",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Superadmin only. Returns the latest device-reported state, if collected, for up to 24 hours.",
+        "responses": {
+          "200": {
+            "description": "Latest diagnostic request and redacted report."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "operationId": "requestDeviceStateReport",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Superadmin only. Queues one on-demand diagnostic request for the device agent over its existing outbound management channel. Expires after two minutes; latest report is retained for 24 hours.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Request queued or existing active request returned."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/operator/controller-settings/time-zone": {
+      "get": {
+        "operationId": "getControllerTimeZone",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Authenticated operators may read the controller-wide IANA time zone used for date and time display.",
+        "responses": {
+          "200": {
+            "description": "Current controller time zone and version.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerTimeZone"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "operationId": "saveControllerTimeZone",
+        "security": [
+          {
+            "operatorSession": []
+          }
+        ],
+        "description": "Superadmin only. Requires a same-origin JSON request and valid IANA time zone. Applies globally to displayed timestamps; stored times remain UTC.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControllerTimeZoneInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Controller time zone saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerTimeZone"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1804,6 +2261,143 @@
       }
     },
     "schemas": {
+      "ConnectionDiagnostics": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "checkedAt",
+          "connectionStatus",
+          "summary",
+          "nextStep",
+          "enrolledAt",
+          "tokenStatus",
+          "tokenExpiresAt",
+          "tokenConsumedAt",
+          "lastSeenAt",
+          "configRevision",
+          "configStatus",
+          "acknowledgedAt",
+          "certificateExpiresAt",
+          "events"
+        ],
+        "properties": {
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "connectionStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "enrolling",
+              "syncing",
+              "management-connected",
+              "offline",
+              "revoked"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "nextStep": {
+            "type": "string"
+          },
+          "enrolledAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "tokenStatus": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "available",
+              "consumed",
+              "expired",
+              "revoked"
+            ]
+          },
+          "tokenExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "tokenConsumedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "configRevision": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "configStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "pending",
+              "received",
+              "rejected",
+              "not-configured",
+              null
+            ]
+          },
+          "acknowledgedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "certificateExpiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "events": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "at",
+                "message"
+              ],
+              "properties": {
+                "id": { "type": "string" },
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
       "SiteInput": {
         "type": "object",
         "additionalProperties": false,
@@ -2008,6 +2602,7 @@
           "controllerUrl"
         ],
         "properties": {
+          "nodeId": { "type": "string", "format": "uuid", "description": "Expected local identity for device-specific installer checks." },
           "token": {
             "type": "string",
             "pattern": "^pm_enroll_[a-f0-9]{64}$"
@@ -2111,7 +2706,8 @@
             "type": "integer",
             "enum": [
               1,
-              2
+              2,
+              3
             ]
           },
           "deviceKind": {
@@ -2148,7 +2744,7 @@
             "if": {
               "properties": {
                 "schemaVersion": {
-                  "const": 2
+                  "minimum": 2
                 }
               }
             },
@@ -2157,13 +2753,11 @@
                 "wireguard"
               ]
             },
-            "else": {
-              "not": {
-                "required": [
-                  "wireguard"
-                ]
-              }
-            }
+            "else": { "not": { "required": [ "wireguard" ] } }
+          },
+          {
+            "if": { "properties": { "schemaVersion": { "const": 3 } } },
+            "then": { "properties": { "wireguard": { "required": ["routing"] } } }
           }
         ]
       },
@@ -2195,6 +2789,9 @@
               "string",
               "null"
             ]
+          },
+          "diagnosticRequest": {
+            "$ref": "#/components/schemas/DiagnosticRequest"
           }
         }
       },
@@ -2307,6 +2904,9 @@
           "unchanged": {
             "type": "boolean",
             "const": true
+          },
+          "diagnosticRequest": {
+            "$ref": "#/components/schemas/DiagnosticRequest"
           }
         }
       },
@@ -2357,6 +2957,11 @@
               0,
               25
             ]
+          },
+          "allowedPrefixes": {
+            "type": "array",
+            "maxItems": 1,
+            "items": { "type": "string" }
           }
         }
       },
@@ -2373,7 +2978,32 @@
             "items": {
               "$ref": "#/components/schemas/WireguardTunnel"
             }
+          },
+          "routing": {
+            "$ref": "#/components/schemas/RoutingPlan"
           }
+        }
+      },
+      "RoutingPlan": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lan", "protectedPrefixes", "bgp"],
+        "properties": {
+          "lan": { "type": "object", "additionalProperties": false, "required": ["interfaceName", "address", "advertisedPrefix"], "properties": {
+            "interfaceName": { "type": "string", "maxLength": 15 }, "address": { "type": "string" }, "advertisedPrefix": { "type": "string" }
+          } },
+          "protectedPrefixes": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "type": "string" } },
+          "bgp": { "type": "object", "additionalProperties": false, "required": ["localAsn", "routerId", "peers"], "properties": {
+            "localAsn": { "type": "integer", "minimum": 64512, "maximum": 65534 }, "routerId": { "type": "string" },
+            "peers": { "type": "array", "maxItems": 128, "items": { "type": "object", "additionalProperties": false,
+              "required": ["interfaceName", "address", "remoteAsn", "importPrefixes", "exportPrefixes", "localPreference"], "properties": {
+                "interfaceName": { "type": "string", "pattern": "^pm[0-9a-f]{12}$" }, "address": { "type": "string" },
+                "remoteAsn": { "type": "integer", "minimum": 64512, "maximum": 65534 },
+                "importPrefixes": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "type": "string" } },
+                "exportPrefixes": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "type": "string" } },
+                "localPreference": { "type": "integer", "enum": [100, 200] }
+              } } }
+          } }
         }
       },
       "TunnelSettingsInput": {
@@ -2386,7 +3016,7 @@
         "properties": {
           "pool": {
             "type": "string",
-            "description": "Unused RFC1918 canonical IPv4 CIDR with prefix length 16\u201330. Once reservations exist, changes require an explicit migration."
+            "description": "Unused RFC1918 canonical IPv4 CIDR with prefix length 16–30. Once reservations exist, changes require an explicit migration."
           },
           "expectedVersion": {
             "type": "integer",
@@ -2493,6 +3123,20 @@
                 }
               }
             }
+          },
+          "bgpPeers": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["address", "state", "receivedPrefixes"],
+              "properties": {
+                "address": { "type": "string" },
+                "state": { "type": "string", "enum": ["Idle", "Connect", "Active", "OpenSent", "OpenConfirm", "Established", "Unavailable"] },
+                "receivedPrefixes": { "type": "integer", "minimum": 0, "maximum": 1 }
+              }
+            }
           }
         }
       },
@@ -2517,7 +3161,7 @@
           },
           "address": {
             "type": "string",
-            "description": "Private IPv4 host/prefix 8\u201330; network/broadcast host addresses rejected."
+            "description": "Private IPv4 host/prefix 8–30; network/broadcast host addresses rejected."
           },
           "advertisedPrefix": {
             "type": "string",
@@ -2546,6 +3190,212 @@
               "type": "string",
               "description": "Canonical unicast IPv4 CIDR."
             }
+          }
+        }
+      },
+      "DiagnosticRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "requestId"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DeviceStateResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "requestId",
+          "status",
+          "report"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "unsupported",
+              "unavailable"
+            ]
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceStateReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              { "type": "string", "enum": ["collection_failed"] },
+              { "type": "null" }
+            ],
+            "description": "Optional safe failure category supplied by the agent. The controller owns timeout classification."
+          }
+        }
+      },
+      "DeviceStateReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stateDirectory",
+          "revision",
+          "wireguardEnabled",
+          "files",
+          "appliedPlan",
+          "interfaces",
+          "unplannedOwnedInterfaces"
+        ],
+        "properties": {
+          "stateDirectory": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "wireguardEnabled": {
+            "type": "boolean"
+          },
+          "files": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "path",
+                "present"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "path": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "present": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "appliedPlan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WireguardPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "interfaces": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "present",
+                "up",
+                "addresses",
+                "lastHandshake"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^pm[0-9a-f]{12}$"
+                },
+                "present": {
+                  "type": "boolean"
+                },
+                "up": {
+                  "type": "boolean"
+                },
+                "addresses": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  }
+                },
+                "lastHandshake": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "unplannedOwnedInterfaces": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "string",
+              "pattern": "^pm[0-9a-f]{12}$"
+            }
+          }
+        }
+      },
+      "ControllerTimeZone": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "timeZone",
+          "version"
+        ],
+        "properties": {
+          "timeZone": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ControllerTimeZoneInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "timeZone",
+          "expectedVersion"
+        ],
+        "properties": {
+          "timeZone": {
+            "type": "string",
+            "maxLength": 64,
+            "example": "America/Los_Angeles"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
           }
         }
       }

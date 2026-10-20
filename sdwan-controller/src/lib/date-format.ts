@@ -2,7 +2,6 @@ const DATE_OPTIONS: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   month: 'numeric',
   day: 'numeric',
-  timeZone: 'UTC',
 };
 
 const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
@@ -10,12 +9,19 @@ const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   hour: 'numeric',
   minute: '2-digit',
   second: '2-digit',
+  timeZoneName: 'short',
 };
 
-export function formatDateUtc(value: Date | string) {
-  return new Intl.DateTimeFormat('en-US', DATE_OPTIONS).format(new Date(value));
+export function formatDate(value: Date | string, timeZone = 'UTC') {
+  return new Intl.DateTimeFormat('en-US', { ...DATE_OPTIONS, timeZone }).format(new Date(value));
 }
 
-export function formatDateTimeUtc(value: Date | string) {
-  return `${new Intl.DateTimeFormat('en-US', DATE_TIME_OPTIONS).format(new Date(value))} UTC`;
+export function formatDateTime(value: Date | string, timeZone = 'UTC') {
+  return new Intl.DateTimeFormat('en-US', { ...DATE_TIME_OPTIONS, timeZone }).format(new Date(value));
+}
+
+export function formatTime(value: Date | string, timeZone = 'UTC') {
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short', timeZone,
+  }).format(new Date(value));
 }

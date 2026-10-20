@@ -16,6 +16,7 @@ Use this index to find the repository's working rules and implementation referen
 - [Implementation plan and milestones](../development/implementation-plan.md)
 - [Codebase map and maintenance guide](../development/codebase-map.md)
 - [Risk-based testing strategy](../development/testing-strategy.md)
+- [Controller-agent communication reliability plan](../development/controller-agent-communication-plan.md)
 - [Controller UI component conventions](../development/ui-component-architecture.md)
 - [Architecture and security index](../README.md)
 - [Current delivery status](../STATUS.md)

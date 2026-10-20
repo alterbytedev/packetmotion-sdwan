@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { formatDateTimeUtc } from '@/lib/date-format';
+import { formatDateTime } from '@/lib/date-format';
+import { useControllerTimeZone } from '@/lib/time-zone-context';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -9,13 +10,14 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import type { NodeRecord, OperatorRole } from '@/lib/fabric/types';
 
 type Connections = {
-  observed: { revision: number; status: 'disabled' | 'applied' | 'failed'; receivedAt: string; handshakes: { name: string; lastHandshake: number }[] } | null;
+  observed: { revision: number; status: 'disabled' | 'applied' | 'failed'; receivedAt: string; handshakes: { name: string; lastHandshake: number }[]; bgpPeers: { address: string; state: string; receivedPrefixes: number }[] } | null;
   desiredRevision: number | null;
   version: number; publicKey: string | null; endpoint: string | null; basePort: number | null; revoked: boolean;
   hubs: { id: string; name: string; ready: boolean; endpoint: string | null }[];
   links: { hubId: string; peerName: string; network: string; hubAddress: string; edgeAddress: string; hubPort: number }[];
 };
 export function WireguardConnections({ node, role }: { node: NodeRecord; role: OperatorRole }) {
+  const { timeZone } = useControllerTimeZone();
   const [data, setData] = useState<Connections | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [endpoint, setEndpoint] = useState('');
@@ -69,8 +71,9 @@ export function WireguardConnections({ node, role }: { node: NodeRecord; role: O
     <CardContent className="space-y-4">
       {data && <div className="rounded-lg border p-3 text-sm" aria-live="polite">
         <p>Network apply: {data.observed ? `${data.observed.status}${data.observed.revision !== data.desiredRevision ? ' (previous revision)' : ''}` : 'Not reported'}</p>
-        {data.observed && <><p className="mt-1 text-xs text-muted-foreground">Revision {data.observed.revision} · Reported {formatDateTimeUtc(data.observed.receivedAt)}</p>
-          {data.observed.handshakes.map((item) => <p key={item.name} className="mt-1 break-words text-xs text-muted-foreground">{item.name}: {item.lastHandshake > 0 ? `last handshake ${formatDateTimeUtc(new Date(item.lastHandshake * 1000).toISOString())}` : 'no handshake observed'}</p>)}
+        {data.observed && <><p className="mt-1 text-xs text-muted-foreground">Revision {data.observed.revision} · Reported {formatDateTime(data.observed.receivedAt, timeZone)}</p>
+          {data.observed.handshakes.map((item) => <p key={item.name} className="mt-1 break-words text-xs text-muted-foreground">{item.name}: {item.lastHandshake > 0 ? `last handshake ${formatDateTime(new Date(item.lastHandshake * 1000).toISOString(), timeZone)}` : 'no handshake observed'}</p>)}
+          {data.observed.bgpPeers.map((peer) => <p key={peer.address} className="mt-1 break-words text-xs text-muted-foreground">BGP {peer.address}: {peer.state} · {peer.receivedPrefixes} approved prefixes received</p>)}
         </>}
       </div>}
       {!data && !error && <Feedback>Loading connections…</Feedback>}

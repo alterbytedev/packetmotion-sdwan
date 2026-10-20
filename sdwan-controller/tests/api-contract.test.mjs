@@ -59,8 +59,23 @@ test('WireGuard contracts preserve device scope and separate receipt from apply'
   for (const endpoint of ['wireguard-key', 'wireguard-status']) {
     assert.deepEqual(spec.paths[`/api/agent/v1/${endpoint}`].post.security, [{ deviceCertificate: [] }]);
   }
-  assert.deepEqual(spec.components.schemas.DeviceConfig.properties.schemaVersion.enum, [1, 2]);
+  assert.deepEqual(spec.components.schemas.DeviceConfig.properties.schemaVersion.enum, [1, 2, 3]);
+  assert.ok(spec.components.schemas.RoutingPlan.properties.bgp);
+  assert.ok(spec.components.schemas.WireguardStatusInput.properties.bgpPeers);
   assert.deepEqual(spec.components.schemas.WireguardStatusInput.properties.status.enum, ['disabled', 'applied', 'failed']);
   assert.equal(spec.components.schemas.WireguardEdgeInput.properties.hubIds.maxItems, 8);
   assert.match(spec.paths['/api/operator/controller-settings/tunnels'].put.description, /Superadmin only/);
+});
+
+test('connection status contract exposes bounded lifecycle facts, not runtime logs', async () => {
+  const spec = await SwaggerParser.validate('../api/openapi.yaml', { resolve: { external: false } });
+  const path = spec.paths['/api/operator/nodes/{id}/connection-status'].get;
+  assert.deepEqual(path.security, [{ operatorSession: [] }]);
+  const route = readFileSync('src/app/api/operator/nodes/[id]/connection-status/route.ts', 'utf8');
+  assert.match(route, /operatorRequest\(request, false/);
+  const schema = spec.components.schemas.ConnectionDiagnostics;
+  assert.equal(schema.additionalProperties, false);
+  assert.equal(schema.properties.events.maxItems, 10);
+  assert.ok(schema.properties.tokenStatus.enum.includes('expired'));
+  assert.ok(spec.components.schemas.EnrollmentToken.properties.nodeId);
 });

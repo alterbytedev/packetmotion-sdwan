@@ -1,0 +1,70 @@
+name: Build and publish agent release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdwan-edge/**/*.go'
+      - 'sdwan-edge/go.mod'
+      - 'sdwan-edge/go.sum'
+      - 'sdwan-edge/install/**'
+      - 'sdwan-edge/scripts/build-release.mjs'
+      - 'deploy/systemd/fabric-agent.service'
+      - '.github/workflows/agent-release.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fabric-agent-release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+          cache-dependency-path: sdwan-edge/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify agent source
+        working-directory: sdwan-edge
+        run: |
+          unformatted=$(gofmt -l cmd internal)
+          test -z "$unformatted" || { echo "Go files need gofmt:"; echo "$unformatted"; exit 1; }
+          go test -race ./...
+          go vet ./...
+
+      - name: Build and sign release bundles
+        env:
+          FABRIC_RELEASE_SIGNING_KEY: ${{ secrets.FABRIC_RELEASE_SIGNING_KEY }}
+        run: |
+          test -n "$FABRIC_RELEASE_SIGNING_KEY" || { echo 'FABRIC_RELEASE_SIGNING_KEY repository secret is required.' >&2; exit 1; }
+          key_file="$RUNNER_TEMP/fabric-release-private.pem"
+          trap 'rm -f "$key_file"' EXIT
+          umask 077
+          printf '%s\n' "$FABRIC_RELEASE_SIGNING_KEY" > "$key_file"
+          FABRIC_RELEASE_SIGNING_KEY="$key_file" node sdwan-edge/scripts/build-release.mjs
+
+      - name: Publish immutable bundles to the controller source
+        run: |
+          AGENT_VERSION=$(sed -nE 's/^const Version = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' sdwan-edge/internal/agent/agent.go)
+          test -n "$AGENT_VERSION"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "sdwan-controller/public/fabric/releases/$AGENT_VERSION" sdwan-controller/public/fabric/edge.sh
+          if git diff --cached --quiet; then
+            echo "Signed agent release $AGENT_VERSION is already published."
+            exit 0
+          fi
+          git commit -m "Publish signed fabric-agent $AGENT_VERSION"
+          git push origin HEAD:main

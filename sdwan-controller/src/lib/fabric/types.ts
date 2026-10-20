@@ -17,6 +17,8 @@ export type NodeRecord = {
   configRevision: number | null;
   configStatus: 'pending' | 'received' | 'rejected' | 'not-configured' | null;
   lastSeenAt: string | null;
+  agentVersion?: string | null;
+  telemetryReceivedAt?: string | null;
   createdAt: string;
 };
 export type Inventory = { sites: Site[]; nodes: NodeRecord[]; total?: number; connected?: number };
