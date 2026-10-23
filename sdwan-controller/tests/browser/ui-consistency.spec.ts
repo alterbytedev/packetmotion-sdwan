@@ -71,7 +71,7 @@ test('navigation focus is contained on mobile and survives viewport changes', as
   const close = page.getByRole('button', { name: 'Close menu', exact: true });
   await expect(close).toBeFocused();
   await page.screenshot({
-    path: `../docs/evidence/browser/navigation-open-${info.project.name}.png`,
+    path: info.outputPath(`navigation-open-${info.project.name}.png`),
     fullPage: true,
   });
   await page.keyboard.press('Tab');
@@ -109,7 +109,7 @@ test('form/select semantics, clipboard feedback and responsive inventory', async
   const kind = page.getByRole('combobox', { name: 'Device type' });
   await expect(kind).toHaveValue('branch');
   await page.screenshot({
-    path: `../docs/evidence/browser/device-form-${info.project.name}.png`,
+    path: info.outputPath(`device-form-${info.project.name}.png`),
     fullPage: true,
   });
   await page.getByRole('button', { name: 'Save device', exact: true }).click();
@@ -149,7 +149,7 @@ test('form/select semantics, clipboard feedback and responsive inventory', async
     true,
   );
   await page.screenshot({
-    path: `../docs/evidence/browser/ui-consistency-${info.project.name}.png`,
+    path: info.outputPath(`ui-consistency-${info.project.name}.png`),
     fullPage: true,
   });
 });

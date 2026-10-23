@@ -39,6 +39,7 @@ test-results/
 
 # Go binaries and coverage profiles
 /sdwan-edge/bin/
+/sdwan-edge/fabric-agent
 /sdwan-controller/backend/bin/
 *.test
 *.out
@@ -56,7 +57,7 @@ private-state/
 *.db
 *.tmp
 
-# Keep generated browser evidence and reviewed documentation tracked.
+# Reviewed evidence may be committed; Playwright artifacts stay in ignored test-results/.
 
 # Generated Next.js type entrypoint
 /sdwan-controller/next-env.d.ts

@@ -1713,3 +1713,23 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: No controller contract, typed desired state, checksums, FRR ownership, local routing opt-in, candidate path, or live network behavior changed. No appliance config was applied; only syntax checks ran.
 - Risks/rollback: Command generation still assumes the existing validated plan and owned-object checks; controller-supplied raw CLI remains prohibited. Source rollback is limited to this task's cleanup template/converter/test and future-work guidance. No network rollback is needed.
 - UNVERIFIED: Appliance FRR apply, BGP sessions, routed forwarding, and network recovery were not exercised by this source readability task.
+
+## GITIGNORE-GO-BINARY-001 — 2026-10-23 — Codex
+
+- Status: COMPLETE.
+- Summary: Added an explicit ignore rule for the `sdwan-edge/fabric-agent` executable created by the documented `go build ./cmd/fabric-agent` command. Existing controller, Next.js, browser-test, Go test, and local PKI output patterns already cover their current generated artifacts.
+- Files: `.gitignore`; this log.
+- Checks: `git check-ignore -v sdwan-edge/fabric-agent` PASS after the change; `git diff --check` PASS. No application tests run because only Git ignore behavior changed.
+- UI/network impact: None.
+- Risks/rollback: The rule matches only the root output path in `sdwan-edge/`; an intentional artifact at that exact path requires `git add -f`. Rollback by removing the one rule; no data or runtime rollback is needed.
+- Next: Build artifacts created by the documented Go command will remain out of Git status.
+
+## PLAYWRIGHT-SCREENSHOTS-001 — 2026-10-23 — Codex
+
+- Status: COMPLETE.
+- Summary: Redirected browser-test screenshots that wrote directly into `docs/evidence/browser/` to Playwright's `test-results/` output. Updated evidence guidance to require explicit review and promotion of selected captures. Existing reviewed evidence remains trackable.
+- Files: `.gitignore`; `sdwan-controller/tests/browser/baseline.spec.ts`; `sdwan-controller/tests/browser/ui-consistency.spec.ts`; `sdwan-controller/tests/browser/inventory.spec.ts`; `docs/evidence/README.md`; this log.
+- Checks: `git diff --check` PASS; source search confirms browser test screenshot destinations now use ignored `test-results/`, `/tmp`, or `testInfo.outputPath`/`info.outputPath`. Automated browser tests not run.
+- UI/network impact: No product UI, API, database, appliance or network behavior changed; only test artifact destinations changed.
+- Risks/rollback: Browser tests no longer refresh evidence files automatically; explicitly copy reviewed screenshots from `sdwan-controller/test-results/` when evidence is needed. Revert the screenshot path and evidence guidance edits to restore the old behavior.
+- Next: Review any desired browser captures and promote only those that serve as durable evidence.

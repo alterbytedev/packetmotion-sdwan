@@ -1,13 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { mkdir } from 'node:fs/promises';
 import { clearInventory } from './fixture';
 
 test.beforeEach(clearInventory);
 
 // Keep this as a reproducible shell baseline. Inventory acceptance lives separately.
 test('login, protected dashboard, navigation, and logout', async ({ page }, testInfo) => {
-  const directory = '../docs/evidence/browser';
-  await mkdir(directory, { recursive: true });
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
@@ -15,7 +12,7 @@ test('login, protected dashboard, navigation, and logout', async ({ page }, test
   if (testInfo.project.name === 'desktop')
     await expect(page.locator('main').getByAltText('Organization logo')).toHaveCount(0);
   await page.screenshot({
-    path: `${directory}/login-${testInfo.project.name}.png`,
+    path: testInfo.outputPath(`login-${testInfo.project.name}.png`),
     fullPage: true,
   });
   await page.getByLabel('Email address').fill(process.env.FABRIC_TEST_EMAIL!);
@@ -24,7 +21,7 @@ test('login, protected dashboard, navigation, and logout', async ({ page }, test
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole('heading', { name: 'Network overview' })).toBeVisible();
   await page.screenshot({
-    path: `${directory}/overview-${testInfo.project.name}.png`,
+    path: testInfo.outputPath(`overview-${testInfo.project.name}.png`),
     fullPage: true,
   });
   if (testInfo.project.name === 'mobile')
@@ -37,7 +34,7 @@ test('login, protected dashboard, navigation, and logout', async ({ page }, test
     'page',
   );
   await page.screenshot({
-    path: `${directory}/devices-${testInfo.project.name}.png`,
+    path: testInfo.outputPath(`devices-${testInfo.project.name}.png`),
     fullPage: true,
   });
   await page.goto('/dashboard/telemetry');

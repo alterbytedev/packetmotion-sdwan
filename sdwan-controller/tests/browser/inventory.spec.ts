@@ -110,7 +110,7 @@ test('admin creates site/device through UI, reloads persisted inventory and reje
   await page.getByRole('textbox', { name: 'Search devices' }).fill('');
   await expect(device).toBeVisible();
   await page.screenshot({
-    path: `../docs/evidence/browser/inventory-${info.project.name}.png`,
+    path: info.outputPath(`inventory-${info.project.name}.png`),
     fullPage: true,
   });
   const origin = 'http://127.0.0.1:3107';

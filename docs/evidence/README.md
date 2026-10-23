@@ -6,9 +6,9 @@ The subsequent interface-row correction replaces the standalone draft panel with
 
 The [Hub inspection](interface-inspection/hub-2026-10-22.json) was collected with a temporary source CLI build on user-specified 192.168.160.142; it proves read-only discovery only. The [delivery guide](../operations/interface-management.md) records versions, ownership observations and pending trunk/console prerequisites. Targeted browser tests passed desktop/mobile draft persistence and viewer denial; reviewed [desktop](browser/interface-drafts/desktop.png) and [mobile](browser/interface-drafts/mobile.png) screenshots are synthetic UI evidence. Agent deployment, VLAN creation, safe-commit rollback, BGP advertisement and forwarding are not established by these results.
 
-Browser baselines are captured by `npm run test:baseline` from sdwan-controller using an isolated temporary PostgreSQL database, generated test credentials, desktop 1440x1000 and mobile 390x844 viewports. Runtime traces stay in ignored test-results/. Screenshots contain test identity only, never credentials.
+Browser screenshots and runtime traces produced by Playwright, including `npm run test:baseline`, are written under the ignored `sdwan-controller/test-results/` directory. They are not added to this evidence folder automatically. Review selected captures and copy them here explicitly when they provide durable evidence; use synthetic test identities and never capture credentials. The desktop and mobile baseline viewports are 1440x1000 and 390x844.
 
-Reviewed M0 originals live under browser/baseline/. Subsequent captures live under browser/. Compare preserved login and dashboard shell; intentional inventory content changes are assessed separately. Screenshot capture alone is not a pixel comparison or release approval.
+Reviewed M0 originals live under browser/baseline/. Later captures belong under browser/ only after they are selected and reviewed. Compare the preserved login and dashboard shell; intentional inventory content changes are assessed separately. Screenshot capture alone is not a pixel comparison or release approval.
 
 Network evidence is not available at M0/M1. Rama will supply the local VM lab later.
 
