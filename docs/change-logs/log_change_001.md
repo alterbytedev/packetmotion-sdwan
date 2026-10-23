@@ -1743,3 +1743,13 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: None. Test screenshot outputs remain local; reviewed legacy images already in Git are unchanged.
 - Risks/rollback: New evidence screenshots cannot be added with ordinary `git add`; keep visual evidence locally or use `git add -f` only for an explicitly approved exception. Revert the scoped ignore rules and re-add files if the repository policy changes. No application or network rollback is needed.
 - Next: Keep future test screenshots outside Git and rely on concise textual evidence in committed docs/logs.
+
+## AGENT-GIT-ARTIFACT-RULE-001 — 2026-10-23 — Codex
+
+- Status: COMPLETE.
+- Summary: Added shared agent guidance requiring each new feature to identify generated local artifacts and ignore unnecessary build/test outputs with narrow patterns in the same change. The rule protects required source, fixtures, reviewed evidence and release assets from broad ignore patterns.
+- Files: `AGENTS.md`; this log.
+- Checks: Documentation-only review; `git diff --check` PASS. No application tests run.
+- UI/network impact: None.
+- Risks/rollback: A too-broad ignore pattern could hide useful files; the instruction requires narrow rules and `git check-ignore` verification. Rollback by removing the added guidance bullet.
+- Next: Apply this check during future feature work.

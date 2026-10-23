@@ -47,6 +47,7 @@ Apply these principles to every feature assessment, bug fix, refactoring, and im
 - Preserve backward compatibility unless a breaking change is explicitly approved. Keep changes easy to review, troubleshoot, test, and revert.
 - Prefer simple, explicit code, clear names, focused functions, standard libraries, and existing dependencies. Centralize shared rules and configuration; avoid magic values and hidden side effects.
 - Explain non-obvious decisions in comments rather than narrating obvious code.
+- For every new feature, identify local files it generates, such as build output, test screenshots, traces, caches, and reports. If those artifacts are not required source, fixtures, reviewed evidence, or release assets, add the narrowest suitable `.gitignore` rule in the same change so routine use does not dirty the worktree or grow the Git repository. Avoid broad patterns that hide required files; verify ignore behavior with `git check-ignore`.
 
 ### Reliability and network ownership
 - Make provisioning and reconciliation idempotent. Handle partial failures, retries, restarts, concurrent operations, and disconnected devices safely.
