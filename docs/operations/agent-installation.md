@@ -123,3 +123,27 @@ staging/acknowledgement. Registration does not enable apply or prove connectivit
 Local apply still requires the reviewed service opt-in described in
 [WireGuard operations](wireguard-tunnels.md). Live appliance upgrade and hub
 connectivity remain UNVERIFIED until checked there.
+
+## Local WireGuard activation after enrollment (0.3.6)
+
+Enrollment and **Save draft → Deploy changes** do not grant local network privileges.
+If Overlay reports **Local activation required**, use the appliance's console:
+
+```sh
+sudo fabric-agent network enable
+sudo fabric-agent network status
+```
+
+Upgrade older agents through **Advanced → Agent upgrade → 0.3.6** first; preserve identity and
+verify the effective service runs that installed binary. No re-enrollment is needed.
+The command checks controller access and routes, installs a scoped local service
+opt-in, and restarts the service with its existing paths/arguments. Check each peer;
+only disabled peers need activation. The controller shows this tip only while a
+current observation needs activation, and hides it once the device reports active.
+It is intentionally not an extra enrollment prompt for healthy devices.
+Read [activation, recovery and evidence limits](wireguard-tunnels.md#local-activation-gate)
+before enabling. Receipt, apply, handshake and tunnel-IP reachability remain separate.
+
+## Interface safe commit increment — 2026-10-22
+
+Agent 0.4.0 adds current interface CIDRs and dedicated static LAN/VLAN safe apply through a locally authorized independent guard. Controller migrations 0022/0023 add candidates and immutable commit history; Underlay row actions offer Save and apply and Edit and retry. WAN/DHCP/gateway/advertisements remain blocked by this adapter, and forwarding stays isolated. Earlier metadata-only descriptions above describe the previous increment. See [interface operations](../operations/interface-management.md) for ownership, activation, recovery and evidence limits.

@@ -1,8 +1,9 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { useEffect, useId, useRef, type HTMLAttributes, type ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
+import { createPortal } from 'react-dom';
+import { useEffect, useId, useRef, useState, type HTMLAttributes, type ReactNode } from 'react';
+import { IconButton } from '@/components/ui/icon-button';
 import { cn } from '@/lib/utils';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -46,13 +47,18 @@ export function Modal({
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setPortalTarget(document.body);
+  }, []);
 
   useEffect(() => {
     onOpenChangeRef.current = onOpenChange;
   }, [onOpenChange]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !portalTarget) return;
 
     const panel = panelRef.current;
     if (!panel) return;
@@ -101,56 +107,60 @@ export function Modal({
       cancelAnimationFrame(focusFrame);
       previouslyFocused?.focus();
     };
-  }, [open, closeOnEscape]);
+  }, [open, closeOnEscape, portalTarget]);
 
-  if (!open) return null;
+  if (!open || !portalTarget) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
+  return createPortal((
+    <div className="fixed inset-0 z-50">
       <button
         type="button"
         tabIndex={-1}
         aria-label="Close dialog backdrop"
-        className="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px]"
+        className="fixed inset-0 bg-slate-950/50 backdrop-blur-[2px]"
         onClick={() => {
           if (closeOnBackdrop) onOpenChange(false);
         }}
       />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
-        tabIndex={-1}
-        className={cn(
-          'relative my-auto w-full rounded-xl border bg-card text-card-foreground shadow-xl outline-none',
-          sizeClasses[size],
-          className,
-        )}
-      >
-        <div className="flex items-start justify-between gap-4 border-b p-5 sm:p-6">
-          <div className="space-y-1.5">
-            <h2 id={titleId} className="text-lg font-semibold tracking-tight">{title}</h2>
-            {description && <p id={descriptionId} className="text-sm leading-relaxed text-muted-foreground">{description}</p>}
+      <div className="fixed inset-0 overflow-y-auto p-4">
+        <div className="flex min-h-full items-center justify-center">
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-describedby={description ? descriptionId : undefined}
+            tabIndex={-1}
+            className={cn(
+              'relative my-auto w-full rounded-xl border bg-card text-card-foreground shadow-xl outline-none',
+              sizeClasses[size],
+              className,
+            )}
+          >
+            <div className="flex items-start justify-between gap-4 border-b p-5 sm:p-6">
+              <div className="space-y-1.5">
+                <h2 id={titleId} className="text-lg font-semibold tracking-tight">{title}</h2>
+                {description && <p id={descriptionId} className="text-sm leading-relaxed text-muted-foreground">{description}</p>}
+              </div>
+              {showCloseButton && (
+                <IconButton
+                  type="button"
+                  variant="ghost"
+                  size="md"
+                  aria-label="Close dialog"
+                  onClick={() => onOpenChange(false)}
+                  className="-mr-2 -mt-2 shrink-0"
+                >
+                  <X aria-hidden="true" />
+                </IconButton>
+              )}
+            </div>
+            <div className="p-5 sm:p-6">{children}</div>
           </div>
-          {showCloseButton && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Close dialog"
-              onClick={() => onOpenChange(false)}
-              className="-mr-2 -mt-2 size-9 shrink-0"
-            >
-              <X aria-hidden="true" />
-            </Button>
-          )}
         </div>
-        <div className="p-5 sm:p-6">{children}</div>
       </div>
     </div>
-  );
+  ), portalTarget);
 }
 
 export function ModalFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {

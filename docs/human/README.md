@@ -4,9 +4,12 @@ This index groups the product and operational material for operators, reviewers,
 
 ## Product and delivery
 
+- [Interface, VLAN and advertisement implementation plan](../development/interface-vlan-management-plan.md)
+- [Interface configuration, safe commits and activation gates](../operations/interface-management.md)
 - [Product requirements](../prd/packetmotion-fabric-v1.1.md)
 - [Current delivery status and verification limits](../STATUS.md)
 - [Implementation milestones](../development/implementation-plan.md)
+- [FRR configuration management plan](../development/frr-configuration-management-plan.md)
 
 ## Architecture and security
 
@@ -15,6 +18,7 @@ This index groups the product and operational material for operators, reviewers,
 - [Agent control-channel target](../architecture/agent-control-channel.md)
 - [Security model](../architecture/security-model.md)
 - [Architecture decisions](../adr/README.md)
+- [WireGuard draft and explicit deployment decision](../adr/0006-wireguard-draft-publication.md)
 - [Next.js controller and Go agents decision](../adr/0001-nextjs-controller-go-agents.md)
 - [Agent management channel decision](../adr/0002-agent-management-channel.md)
 

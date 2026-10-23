@@ -1,0 +1,191 @@
+{
+  "capturedAt": "2026-10-22T09:53:48Z",
+  "network": {
+    "interfaces": [
+      {
+        "name": "lo",
+        "index": 1,
+        "kind": "loopback",
+        "up": true,
+        "mtu": 65536,
+        "ipv4Addresses": [
+          "127.0.0.1/8"
+        ]
+      },
+      {
+        "name": "ens33",
+        "index": 2,
+        "kind": "ether",
+        "up": true,
+        "mtu": 1500,
+        "ipv4Addresses": [
+          "192.168.160.142/24"
+        ]
+      },
+      {
+        "name": "ens34",
+        "index": 3,
+        "kind": "ether",
+        "up": false,
+        "mtu": 1500,
+        "ipv4Addresses": []
+      },
+      {
+        "name": "ens35",
+        "index": 4,
+        "kind": "ether",
+        "up": false,
+        "mtu": 1500,
+        "ipv4Addresses": []
+      },
+      {
+        "name": "ens36",
+        "index": 5,
+        "kind": "ether",
+        "up": false,
+        "mtu": 1500,
+        "ipv4Addresses": []
+      },
+      {
+        "name": "pm8617db064cf9",
+        "index": 6,
+        "kind": "wireguard",
+        "up": true,
+        "mtu": 1380,
+        "ipv4Addresses": [
+          "10.250.0.2/31"
+        ]
+      }
+    ],
+    "ipv4Routes": [
+      {
+        "destination": "default",
+        "device": "ens33",
+        "gateway": "192.168.160.2",
+        "protocol": "dhcp",
+        "table": "unknown"
+      },
+      {
+        "destination": "10.250.0.2/31",
+        "device": "pm8617db064cf9",
+        "protocol": "kernel",
+        "table": "unknown"
+      },
+      {
+        "destination": "192.168.160.0/24",
+        "device": "ens33",
+        "protocol": "dhcp",
+        "table": "unknown"
+      },
+      {
+        "destination": "10.250.0.2",
+        "device": "pm8617db064cf9",
+        "protocol": "kernel",
+        "table": "local"
+      },
+      {
+        "destination": "127.0.0.0/8",
+        "device": "lo",
+        "protocol": "kernel",
+        "table": "local"
+      },
+      {
+        "destination": "127.0.0.1",
+        "device": "lo",
+        "protocol": "kernel",
+        "table": "local"
+      },
+      {
+        "destination": "127.255.255.255",
+        "device": "lo",
+        "protocol": "kernel",
+        "table": "local"
+      },
+      {
+        "destination": "192.168.160.142",
+        "device": "ens33",
+        "protocol": "kernel",
+        "table": "local"
+      },
+      {
+        "destination": "192.168.160.255",
+        "device": "ens33",
+        "protocol": "kernel",
+        "table": "local"
+      }
+    ]
+  },
+  "services": [
+    {
+      "unit": "networking.service",
+      "loadState": "loaded",
+      "activeState": "active"
+    },
+    {
+      "unit": "systemd-networkd.service",
+      "loadState": "loaded",
+      "activeState": "inactive"
+    },
+    {
+      "unit": "NetworkManager.service",
+      "loadState": "not-found",
+      "activeState": "inactive"
+    },
+    {
+      "unit": "packetmotion-dhcp.service",
+      "loadState": "loaded",
+      "activeState": "active"
+    },
+    {
+      "unit": "frr.service",
+      "loadState": "loaded",
+      "activeState": "active"
+    },
+    {
+      "unit": "systemd-resolved.service",
+      "loadState": "not-found",
+      "activeState": "inactive"
+    },
+    {
+      "unit": "fabric-agent.service",
+      "loadState": "loaded",
+      "activeState": "active"
+    }
+  ],
+  "configPaths": [
+    {
+      "path": "/etc/network/interfaces",
+      "state": "present"
+    },
+    {
+      "path": "/etc/network/interfaces.d",
+      "state": "present"
+    },
+    {
+      "path": "/etc/systemd/network",
+      "state": "present"
+    },
+    {
+      "path": "/etc/NetworkManager/system-connections",
+      "state": "absent"
+    },
+    {
+      "path": "/etc/netplan",
+      "state": "absent"
+    },
+    {
+      "path": "/usr/local/sbin/packetmotion-dhcp",
+      "state": "present"
+    },
+    {
+      "path": "/etc/frr/frr.conf",
+      "state": "present"
+    },
+    {
+      "path": "/etc/resolv.conf",
+      "state": "present"
+    }
+  ],
+  "ownership": "unverified: confirm per-interface owner, management path, switch mapping and console recovery locally",
+  "activationReady": false
+}

@@ -5,6 +5,7 @@ import { mutate } from './inventory';
 import { lockTopology } from './wireguard-plan';
 import { lanInput, protectedNetworksInput } from './lan-validation';
 import type { Actor } from './types';
+import { assertInterfacePrefixAvailable, assertLegacyLanInterfaceAvailable } from './network-reservations';
 
 export async function readRoutingSettings(actor: Actor | null) {
   authorize(actor);
@@ -18,6 +19,7 @@ export async function saveRoutingSettings(actor: Actor | null, value: unknown) {
     authorizeSuperadmin(fresh);
     await lockTopology(client);
     await client.query('SELECT pg_advisory_xact_lock(72011002)');
+    for (const prefix of input.protectedPrefixes) await assertInterfacePrefixAvailable(client,prefix);
     const prior = await client.query('SELECT version FROM routing_settings');
     if ((prior.rows[0]?.version ?? 0) !== input.expectedVersion)
       throw new FabricError(409, 'Protected networks changed; reload and retry.');
@@ -55,6 +57,8 @@ export async function saveLan(actor: Actor | null, nodeId: string, value: unknow
     if (!node.rowCount) throw new FabricError(404, 'Device not found or revoked.');
     const prior = await client.query('SELECT version FROM lan_profiles WHERE node_id=$1', [nodeId]);
     if ((prior.rows[0]?.version ?? 0) !== input.expectedVersion) throw new FabricError(409, 'LAN settings changed; reload and retry.');
+    await assertLegacyLanInterfaceAvailable(client,nodeId,input.interfaceName);
+    await assertInterfacePrefixAvailable(client,input.advertisedPrefix);
     const settings = await client.query('SELECT protected_prefixes FROM routing_settings');
     if (!settings.rowCount) throw new FabricError(409, 'Configure protected management networks in Settings first.');
     const protectedOverlap = await client.query('SELECT 1 FROM routing_settings r CROSS JOIN unnest(r.protected_prefixes) p WHERE p && $1::cidr LIMIT 1', [input.advertisedPrefix]);

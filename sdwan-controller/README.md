@@ -1,5 +1,7 @@
 # SD-WAN Controller
 
+Device details → Underlay has Configure and VLANs actions directly on each editable reported interface, opening its own inactive settings after migration 0022. Draft saves are audited and version-checked; they do not publish agent revisions or apply networking. Agent 0.4.0 and migration 0023 add an independent 60-second guard for locally authorized dedicated static LAN/VLAN apply; WAN/DHCP/advertisement remain gated. See [interface delivery and pending gates](../docs/operations/interface-management.md).
+
 ## Quick start: first local run
 
 Use this sequence for a fresh local development setup. Keep this terminal in `sdwan-controller/` unless a step says otherwise.
@@ -108,7 +110,7 @@ The read-only `/diagnosticlogs` page is available only to superadmins through th
 
 Treat diagnostic output as sensitive operational data. See [Runtime error reports](#runtime-error-reports) and the [troubleshooting guide](../docs/operations/runtime-error-troubleshooting.md).
 
-Superadmins can also open a device's **Configuration sources** tab to request a short-lived, device-reported WireGuard state snapshot and review the known state-file paths. This is separate from the controller-published raw configuration in Command history. Reports use the existing outbound agent channel, expire after 24 hours, and exclude private key contents. FRR and general nftables are reference-only until their typed device operations are implemented.
+Superadmins can also open a device's **Advanced → Configuration sources** section to request a short-lived, device-reported WireGuard state snapshot and review the known state-file paths. This is separate from the controller-published raw configuration in Command history. Reports use the existing outbound agent channel, expire after 24 hours, and exclude private key contents. FRR and general nftables are reference-only until their typed device operations are implemented.
 
 Superadmins can set the controller-wide display time zone in **Settings → Controller time zone** using an IANA name such as `America/Los_Angeles`. It changes timestamp presentation across dashboard and diagnostic views; stored timestamps and API instants remain UTC. UTC is the default. Apply controller migration 0017 before deploying this setting.
 
@@ -214,3 +216,14 @@ Use the existing `src/components/ui/` primitives and `src/components/fabric/` fe
 ## Selected hub tunnel source increment
 
 Source 0.2.0 adds saved multi-hub selection and a local WireGuard activation gate. Apply controller migrations through 0009 before deploying its UI/API. Existing signed installer/release 0.1.6 and the default unprivileged service remain management-only. See [activation, recovery and evidence limits](../docs/operations/wireguard-tunnels.md). No automatic release or network activation is performed.
+
+WireGuard dashboard forms use Save draft followed by Deploy changes. Deploy publishes desired revisions; local WireGuard opt-in on each appliance remains required. Apply controller migrations (including `0020_wireguard_drafts.sql`) before serving this UI/API. See the [draft/deploy workflow](../docs/operations/wireguard-tunnels.md#draft-and-explicit-deployment-workflow) for conflicts, status interpretation and the retained legacy immediate-publication API.
+
+Agent 0.3.6 provides local `sudo fabric-agent network enable` / `network status`.
+Overlay shows the command only when a current device observation needs local
+activation; healthy devices do not show the activation tip. Enrollment remains
+management only. See [activation and upgrade requirements](../docs/operations/agent-installation.md#local-wireguard-activation-after-enrollment-036).
+
+## Interface safe commit increment — 2026-10-22
+
+Agent 0.4.0 adds current interface CIDRs and dedicated static LAN/VLAN safe apply through a locally authorized independent guard. Controller migrations 0022/0023 add candidates and immutable commit history; Underlay row actions offer Save and apply and Edit and retry. WAN/DHCP/gateway/advertisements remain blocked by this adapter, and forwarding stays isolated. Earlier metadata-only descriptions above describe the previous increment. See [interface operations](../docs/operations/interface-management.md) for ownership, activation, recovery and evidence limits.

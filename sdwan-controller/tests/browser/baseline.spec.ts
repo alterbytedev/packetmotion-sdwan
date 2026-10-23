@@ -11,6 +11,9 @@ test('login, protected dashboard, navigation, and logout', async ({ page }, test
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+  // Only the desktop hero displays the logo; mobile keeps its lazy image hidden.
+  if (testInfo.project.name === 'desktop')
+    await expect(page.locator('main').getByAltText('Organization logo')).toHaveCount(0);
   await page.screenshot({
     path: `${directory}/login-${testInfo.project.name}.png`,
     fullPage: true,

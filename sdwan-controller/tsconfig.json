@@ -45,7 +45,11 @@
     ".next-wireguard-regression/types/**/*.ts",
     ".next-wireguard-regression/dev/types/**/*.ts",
     ".next-lan-m1/types/**/*.ts",
-    ".next-lan-m1/dev/types/**/*.ts"
+    ".next-lan-m1/dev/types/**/*.ts",
+    ".next-permanent-delete-review/types/**/*.ts",
+    ".next-permanent-delete-review/dev/types/**/*.ts",
+    ".next-permanent-delete-review-final/types/**/*.ts",
+    ".next-permanent-delete-review-final/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

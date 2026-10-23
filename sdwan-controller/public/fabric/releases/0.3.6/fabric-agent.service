@@ -1,0 +1,24 @@
+[Unit]
+Description=PacketMotion Fabric management agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=packetmotion
+Group=packetmotion
+StateDirectory=packetmotion
+StateDirectoryMode=0700
+ExecStart=/usr/local/bin/fabric-agent run --state-dir /var/lib/packetmotion
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

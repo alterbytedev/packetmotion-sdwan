@@ -12,16 +12,20 @@ Use this index to find the repository's working rules and implementation referen
 
 ## Working references
 
+- [Interface, VLAN and advertisement implementation plan](../development/interface-vlan-management-plan.md)
+- [Interface configuration, safe commits and activation gates](../operations/interface-management.md)
 - [Product requirements and implementation boundary](../prd/packetmotion-fabric-v1.1.md)
 - [Implementation plan and milestones](../development/implementation-plan.md)
 - [Codebase map and maintenance guide](../development/codebase-map.md)
 - [Risk-based testing strategy](../development/testing-strategy.md)
 - [Controller-agent communication reliability plan](../development/controller-agent-communication-plan.md)
+- [FRR configuration management plan](../development/frr-configuration-management-plan.md)
 - [Controller UI component conventions](../development/ui-component-architecture.md)
 - [Architecture and security index](../README.md)
 - [Current delivery status](../STATUS.md)
 - [Debian bootstrap and interface-name-preserving networking](../../sdwan-edge/sdwan-provisioning-scripts/README.md)
 - [Routed LAN delivery and activation](../operations/routed-lan.md)
+- [WireGuard draft/publication boundary](../adr/0006-wireguard-draft-publication.md)
 - [Selected hub WireGuard tunnels and local activation](../operations/wireguard-tunnels.md)
 - [Management communication and recovery](../operations/management-channel.md)
 - [Agent control-channel target](../architecture/agent-control-channel.md)

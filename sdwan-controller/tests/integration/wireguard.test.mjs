@@ -116,7 +116,29 @@ test('tunnel allocation, publication, conflicts, removal and revocation are tran
     assert.equal((await pool.query("SELECT action FROM audit_events WHERE resource_id=$1 AND action='device.archived'", [hubs[1].id])).rowCount, 1);
     assert.equal((await inv.listDevices(actor, new URLSearchParams({ search: 'WG Hub 1' }))).total, 0);
     await assert.rejects(inv.getDevice(actor, hubs[1].id), error => error.status === 404);
+    assert.equal((await inv.listDevices(actor, new URLSearchParams({ archived: 'true' }))).nodes.some(node => node.id === hubs[1].id), true);
+    await assert.rejects(inv.listDevices({ ...actor, role: 'viewer' }, new URLSearchParams({ archived: 'true' })), /Administrator/);
+    await assert.rejects(enrollment.permanentlyDeleteDevice(actor, hubs[0].id), /Archive every selected/);
     await assert.rejects(enrollment.archiveDevice({ ...actor, role: 'viewer' }, edge.id), /Administrator/);
+    await enrollment.permanentlyDeleteDevice(actor, hubs[1].id);
+    assert.equal((await pool.query('SELECT id FROM nodes WHERE id=$1', [hubs[1].id])).rowCount, 0);
+    assert.equal((await pool.query("SELECT action FROM audit_events WHERE resource_id=$1 AND action='device.permanently_deleted'", [hubs[1].id])).rowCount, 1);
+
+    const batch = [];
+    for (let index = 0; index < 2; index += 1) {
+      const node = await inv.createNode(actor, { name: `Bulk archive ${index}`, kind: 'branch', mode: 'gateway' });
+      await pool.query(
+        `INSERT INTO wireguard_observed(node_id,revision,checksum,status,handshakes)
+         VALUES($1,1,'fixture','disabled','{}'::jsonb)`, [node.id],
+      );
+      await enrollment.archiveDevice(actor, node.id);
+      batch.push(node.id);
+    }
+    const deleted = await enrollment.permanentlyDeleteDevices(actor, batch);
+    assert.equal(deleted.deleted, 2);
+    assert.equal((await pool.query('SELECT id FROM nodes WHERE id=ANY($1::uuid[])', [batch])).rowCount, 0);
+    assert.equal((await pool.query("SELECT id FROM audit_events WHERE resource_id=ANY($1::uuid[]) AND action='device.permanently_deleted'", [batch])).rowCount, 2);
+    await assert.rejects(enrollment.permanentlyDeleteDevices({ ...actor, role: 'viewer' }, batch), /Administrator/);
   } finally {
     await pool.query("UPDATE operators SET role='admin' WHERE id=$1", [actor.id]);
   }

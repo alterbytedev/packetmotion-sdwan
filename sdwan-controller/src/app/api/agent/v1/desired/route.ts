@@ -3,6 +3,7 @@ import { agentRequest } from '@/lib/fabric/agent-http';
 import { desiredConfig, waitForDesiredConfig } from '@/lib/fabric/channel';
 import { recordConfigDelivery } from '@/lib/fabric/command-history';
 import { readPendingDeviceStateRequest } from '@/lib/fabric/device-state';
+import { pendingInterfaceRequest } from '@/lib/fabric/network-commit-state';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export function GET(request: Request) {
@@ -18,7 +19,8 @@ export function GET(request: Request) {
       const result = await desiredConfig(device.id, revision, checksum);
       if (result.payload) await recordDeliveryIfAvailable(device.id, Number(result.revision));
       const diagnosticRequest = await readPendingDeviceStateRequest(device.id);
-      return { ...result, ...(diagnosticRequest ? { diagnosticRequest } : {}) };
+      const interfaceRequest = await pendingInterfaceRequest(device.id);
+      return { ...result, ...(diagnosticRequest ? { diagnosticRequest } : {}), ...(interfaceRequest ? { interfaceRequest } : {}) };
     }
     if (!/^([1-9]|1\d|2[0-5])$/.test(wait))
       throw new FabricError(400, 'Desired-state wait must be between 1 and 25 seconds.');
@@ -26,7 +28,8 @@ export function GET(request: Request) {
       async () => Boolean(await readPendingDeviceStateRequest(device.id)));
     if (result.payload) await recordDeliveryIfAvailable(device.id, Number(result.revision));
     const diagnosticRequest = await readPendingDeviceStateRequest(device.id);
-    return { ...result, ...(diagnosticRequest ? { diagnosticRequest } : {}) };
+    const interfaceRequest = await pendingInterfaceRequest(device.id);
+      return { ...result, ...(diagnosticRequest ? { diagnosticRequest } : {}), ...(interfaceRequest ? { interfaceRequest } : {}) };
   });
 }
 

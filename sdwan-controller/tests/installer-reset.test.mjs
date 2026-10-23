@@ -57,6 +57,7 @@ EXPECTED_NODE_ID=${newId}
 SERVER_CA_FILE=''
 STOP_COUNT=0
 read_reset_confirmation() { return 0; }
+interface_guard_reset_preflight() { :; }
 read_enrollment_token() { TOKEN=secret-token-sentinel; }
 enroll_directory() { printf '%s' '{"nodeId":"${newId}","privateKey":"private-new-sentinel"}' > "$1/identity.json"; unset TOKEN; }
 chown() { :; }
@@ -146,4 +147,15 @@ ${block}
   first.stdin.end('release\n');await exited;
   assert.equal(spawnSync('bash',['-c',prelude],{encoding:'utf8'}).status,0);
  } finally {first.kill();rmSync(root,{recursive:true,force:true});}
+});
+
+test('active interface guard blocks identity replacement before reset or enrollment', () => {
+ const result=spawnSync('bash',['-c',`${source}
+systemctl() { return 0; }
+interface_guard_reset_preflight
+printf unexpected-success
+`],{encoding:'utf8'});
+ assert.equal(result.status,1);
+ assert.match(result.stderr,/interface guard/);
+ assert.doesNotMatch(result.stdout,/unexpected-success/);
 });

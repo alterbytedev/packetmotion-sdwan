@@ -1,3 +1,4 @@
+import { assertInterfacePrefixAvailable } from './network-reservations';
 import 'server-only';
 import { createHash, randomUUID } from 'node:crypto';
 import { URLSearchParams } from 'node:url';
@@ -98,6 +99,7 @@ async function insertSite(
 ): Promise<Site> {
   await client.query('SELECT pg_advisory_xact_lock(72011002)');
   if (input.lanPrefix) {
+    await assertInterfacePrefixAvailable(client,input.lanPrefix);
     const protectedOverlap = await client.query(
       'SELECT 1 FROM routing_settings r CROSS JOIN unnest(r.protected_prefixes) p WHERE p && $1::cidr LIMIT 1', [input.lanPrefix],
     );
@@ -184,6 +186,8 @@ export async function listDevices(
 ): Promise<DevicePage> {
   authorize(actor);
   const search = (params.get('search') || '').trim();
+  const archived = params.get('archived') === 'true';
+  if (archived) authorize(actor, true);
   const page = Number(params.get('page') || 1);
   const pageSize = Number(params.get('pageSize') || 25);
   if (
@@ -200,7 +204,7 @@ export async function listDevices(
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const filter =
-      "WHERE n.archived_at IS NULL AND (n.name ILIKE $1 OR (CASE WHEN n.kind='hub' THEN 'Hub' ELSE 'Edge' END) ILIKE $1)";
+      `WHERE n.archived_at ${archived ? 'IS NOT NULL' : 'IS NULL'} AND (n.name ILIKE $1 OR (CASE WHEN n.kind='hub' THEN 'Hub' ELSE 'Edge' END) ILIKE $1)`;
     const count = await client.query<{ total: number }>(
       `SELECT count(*)::int AS total FROM nodes n ${filter}`,
       [pattern],

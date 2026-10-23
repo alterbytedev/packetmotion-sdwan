@@ -81,6 +81,7 @@ export function AgentConfiguration({
                   Device
                 </label>
                 <Select
+                  controlSize="md"
                   id="config-device"
                   value={node}
                   disabled={pending}
@@ -98,6 +99,7 @@ export function AgentConfiguration({
                   Check-in interval (seconds)
                 </label>
                 <Input
+                  controlSize="md"
                   id="config-interval"
                   type="number"
                   min={10}
@@ -114,6 +116,7 @@ export function AgentConfiguration({
             </p>
             {role !== 'viewer' && (
               <Button
+                size="md"
                 type="button"
                 disabled={
                   pending ||

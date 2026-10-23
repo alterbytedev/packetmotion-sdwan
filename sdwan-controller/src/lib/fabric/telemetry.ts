@@ -1,7 +1,8 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import { getDatabase } from '../db';
-import { FabricError, authorize } from './authorization';
+import { authorize, FabricError } from './authorization';
 import type { Actor } from './types';
 
 export async function recordHeartbeat(nodeId: string, value: unknown) {
@@ -12,12 +13,21 @@ export async function recordHeartbeat(nodeId: string, value: unknown) {
     arch?: unknown;
     uptimeSeconds?: unknown;
     interfaces?: unknown;
+    interfaceApply?: unknown;
   };
   if (
     !input ||
     Object.keys(input).some(
       (key) =>
-        !['eventId', 'agentVersion', 'os', 'arch', 'uptimeSeconds', 'interfaces'].includes(key),
+        ![
+          'eventId',
+          'agentVersion',
+          'os',
+          'arch',
+          'uptimeSeconds',
+          'interfaces',
+          'interfaceApply',
+        ].includes(key),
     ) ||
     typeof input.eventId !== 'string' ||
     !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(input.eventId) ||
@@ -32,6 +42,7 @@ export async function recordHeartbeat(nodeId: string, value: unknown) {
     input.interfaces.length > 64
   )
     throw new FabricError(400, 'Invalid heartbeat.');
+  let addressCount = 0;
   for (const entry of input.interfaces) {
     if (
       !entry ||
@@ -41,9 +52,58 @@ export async function recordHeartbeat(nodeId: string, value: unknown) {
       !Number.isInteger(entry.mtu) ||
       entry.mtu < 0 ||
       entry.mtu > 1000000 ||
-      Object.keys(entry).some((key) => !['name', 'up', 'mtu'].includes(key))
+      (entry.kind !== undefined &&
+        (typeof entry.kind !== 'string' || !/^[a-zA-Z0-9_.:-]{1,64}$/.test(entry.kind))) ||
+      (entry.parentName !== undefined &&
+        (typeof entry.parentName !== 'string' ||
+          !/^[a-zA-Z0-9_.-]{1,15}$/.test(entry.parentName))) ||
+      (entry.vlanId !== undefined &&
+        (!Number.isInteger(entry.vlanId) || entry.vlanId < 1 || entry.vlanId > 4094)) ||
+      Object.keys(entry).some(
+        (key) => !['name', 'up', 'mtu', 'addresses', 'kind', 'parentName', 'vlanId'].includes(key),
+      ) ||
+      (entry.addresses !== undefined &&
+        (!Array.isArray(entry.addresses) ||
+          entry.addresses.length > 16 ||
+          entry.addresses.some((value: unknown) => {
+            if (typeof value !== 'string' || value.length > 64) return true;
+            const [address, bits, extra] = value.split('/');
+            const family = isIP(address);
+            return (
+              extra !== undefined ||
+              !family ||
+              !/^(?:0|[1-9][0-9]{0,2})$/.test(bits) ||
+              Number(bits) > (family === 4 ? 32 : 128)
+            );
+          })))
     )
       throw new FabricError(400, 'Invalid interface telemetry.');
+    addressCount += entry.addresses?.length ?? 0;
+    if (addressCount > 256) throw new FabricError(400, 'Invalid interface telemetry.');
+  }
+  if (input.interfaceApply !== undefined) {
+    const capability = input.interfaceApply as Record<string, unknown>;
+    if (
+      !capability ||
+      typeof capability !== 'object' ||
+      Array.isArray(capability) ||
+      Object.keys(capability).some(
+        (key) => !['nodeId', 'protocolVersion', 'mode', 'interfaces', 'updatedAt'].includes(key),
+      ) ||
+      typeof capability.nodeId !== 'string' ||
+      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(capability.nodeId) ||
+      capability.protocolVersion !== 1 ||
+      capability.mode !== 'dedicated-static' ||
+      !Array.isArray(capability.interfaces) ||
+      capability.interfaces.length > 16 ||
+      capability.interfaces.some(
+        (name: unknown) => typeof name !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_.-]{0,14}$/.test(name),
+      ) ||
+      typeof capability.updatedAt !== 'string' ||
+      capability.updatedAt.length > 40 ||
+      !Number.isFinite(Date.parse(capability.updatedAt))
+    )
+      throw new FabricError(400, 'Invalid interface apply capability.');
   }
   const serialized = JSON.stringify(input);
   const checksum = createHash('sha256').update(serialized).digest('hex');

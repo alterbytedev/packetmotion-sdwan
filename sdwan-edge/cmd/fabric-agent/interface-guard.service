@@ -1,0 +1,30 @@
+[Unit]
+Description=PacketMotion locally authorized interface apply and rollback guard
+After=network.target
+Before=fabric-agent.service
+
+[Service]
+Type=notify
+User=root
+Group=root
+StateDirectory=packetmotion-interfaces
+StateDirectoryMode=0700
+ExecStart=/usr/local/bin/fabric-agent interface-guard
+Restart=on-failure
+RestartSec=1
+WatchdogSec=10
+TimeoutStartSec=120
+TimeoutStopSec=5
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_OVERRIDE CAP_CHOWN
+ReadWritePaths=/var/lib/packetmotion
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

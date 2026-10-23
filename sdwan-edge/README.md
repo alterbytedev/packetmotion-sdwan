@@ -21,6 +21,8 @@ The `Build and publish agent release` workflow runs pinned Go tests and builds s
 
 ## CLI reference
 
+Source adds `fabric-agent network inspect`: read-only selected IPv4 interface/VLAN/route discovery, known network-service status and configuration-path presence. It does not load enrollment identity, read configuration contents, change networking or establish ownership. It is included in signed 0.4.0; earlier immutable releases are unchanged. See [inspection evidence and pending interface-apply gates](../docs/operations/interface-management.md).
+
 `fabric-agent --version` prints the agent version and build OS/architecture without loading identity state or contacting the Controller. `fabric-agent version` remains available with its original version-only output. Use `fabric-agent --help` for commands, `fabric-agent enroll --help` for enrollment options, and `fabric-agent run --help` for runtime options.
 
 Enrollment options include `--controller`, `--state-dir`, `--server-ca`, and the lab-only `--allow-insecure-local`. Runtime options include `--state-dir`, `--once`, and the local network activation gates `--enable-wireguard`, `--enable-routing`, and `--lan-interface`. Routing remains locally authorized and requires both WireGuard opt-in and a specific LAN interface; the Controller cannot enable it.
@@ -65,3 +67,18 @@ See [selected hub tunnels](../docs/operations/wireguard-tunnels.md), [routed LAN
 The namespace check is documented in operations; ordinary Go tests skip it. Debian deployment/reboot and full proxy-to-kernel validation remain pending. Do not activate real appliances before management-path and lab review.
 
 Signed release 0.3.2 adds bounded local operation logs, `status`, management-route recovery wiring and root-only `reset-network`. The installer offers a terminal-confirmed old-identity reset with private backup, owned network cleanup and retirement of local fabric-agent overrides, then starts the replacement in management-only mode. Read [replacement enrollment and recovery limits](../docs/operations/agent-installation.md#confirmed-replacement-enrollment-032) before use. Earlier signed bundles remain immutable. Local packaging and isolated namespace evidence do not prove a deployed Debian reset or reboot canary.
+
+## Simple local activation (0.3.6)
+
+After upgrading the enrolled service binary, use `sudo fabric-agent network enable`
+on a device reporting disabled network apply. Inspect with
+`sudo fabric-agent network status`. The command preserves ExecStart/state/arguments,
+checks controller access and read-only network preflight, and manages one local
+systemd opt-in. It does not authorize routing or execute from the controller.
+`FABRIC_WIREGUARD_ENABLED=1` is a local runtime default; an explicit run flag takes
+precedence. The default service/installer remains management only.
+See [activation and recovery](../docs/operations/wireguard-tunnels.md#local-activation-gate).
+
+## Interface safe commit increment — 2026-10-22
+
+Agent 0.4.0 adds current interface CIDRs and dedicated static LAN/VLAN safe apply through a locally authorized independent guard. Controller migrations 0022/0023 add candidates and immutable commit history; Underlay row actions offer Save and apply and Edit and retry. WAN/DHCP/gateway/advertisements remain blocked by this adapter, and forwarding stays isolated. Earlier metadata-only descriptions above describe the previous increment. See [interface operations](../docs/operations/interface-management.md) for ownership, activation, recovery and evidence limits.

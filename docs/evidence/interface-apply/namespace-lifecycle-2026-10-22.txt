@@ -1,0 +1,7 @@
+=== RUN   TestInterfaceGuardNamespaceLifecycle
+--- PASS: TestInterfaceGuardNamespaceLifecycle (68.85s)
+PASS
+ok  	packetmotion/fabric-agent/cmd/fabric-agent	68.851s
+testing: warning: no tests to run
+PASS
+ok  	packetmotion/fabric-agent/internal/network	0.004s [no tests to run]

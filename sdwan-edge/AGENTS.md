@@ -14,6 +14,7 @@ Read [shared rules](../AGENTS.md), the [codebase map](../docs/development/codeba
 - Never print tokens/private keys, run arbitrary shell commands or enable network apply through controller configuration. The default service remains unprivileged; only the local opt-in permits typed owned WireGuard operations. Keep state/key files private and uncommitted.
 - Preserve persistence order, retry behavior, JSON contracts and checksum bytes when refactoring. Received configuration must never be described as applied.
 - Use `gofmt`, explicit names and focused functions. Explain persistence and recovery invariants where they matter.
+- Keep all agent-generated FRR command syntax in readable multiline templates in the owning `*_render.go` file, including future FRR features and cleanup commands. Convert only validated typed intent into named template data; never accept controller-supplied CLI text. Keep exact-output fixtures/tests with each renderer.
 
 ## Verification and records
 

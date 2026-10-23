@@ -168,31 +168,6 @@ func (e Engine) bgpCandidate(plan Plan) (string, error) {
 	}
 	return filepath.Join(e.Directory, "routing-candidate.conf"), nil
 }
-func (e Engine) renderBGP(plan Plan) string {
-	bgp := plan.Routing.BGP
-	var b strings.Builder
-	fmt.Fprintf(&b, "ip prefix-list %sOWNER seq 5 deny 0.0.0.0/0 le 32\n", e.bgpPrefix())
-	for _, peer := range bgp.Peers {
-		name := e.bgpPrefix() + peer.InterfaceName
-		fmt.Fprintf(&b, "ip prefix-list %s_IN seq 5 permit %s\nip prefix-list %s_IN seq 10 deny 0.0.0.0/0 le 32\n", name, peer.ImportPrefixes[0], name)
-		fmt.Fprintf(&b, "ip prefix-list %s_OUT seq 5 permit %s\nip prefix-list %s_OUT seq 10 deny 0.0.0.0/0 le 32\n", name, peer.ExportPrefixes[0], name)
-		fmt.Fprintf(&b, "route-map %s_IN permit 10\n match ip address prefix-list %s_IN\n set local-preference %d\nexit\nroute-map %s_IN deny 100\nexit\n", name, name, peer.LocalPreference, name)
-	}
-	fmt.Fprintf(&b, "router bgp %d\n bgp router-id %s\n no bgp default ipv4-unicast\n bgp ebgp-requires-policy\n bgp network import-check\n", bgp.LocalASN, bgp.RouterID)
-	for _, peer := range bgp.Peers {
-		index := slices.IndexFunc(plan.Tunnels, func(t Tunnel) bool { return t.Name == peer.InterfaceName })
-		address, _ := netip.ParsePrefix(plan.Tunnels[index].Address)
-		fmt.Fprintf(&b, " neighbor %s remote-as %d\n neighbor %s update-source %s\n neighbor %s timers 3 9\n", peer.Address, peer.RemoteASN, peer.Address, address.Addr(), peer.Address)
-	}
-	b.WriteString(" address-family ipv4 unicast\n")
-	fmt.Fprintf(&b, "  network %s\n  maximum-paths 1\n", plan.Routing.LAN.AdvertisedPrefix)
-	for _, peer := range bgp.Peers {
-		name := e.bgpPrefix() + peer.InterfaceName
-		fmt.Fprintf(&b, "  neighbor %s activate\n  neighbor %s route-map %s_IN in\n  neighbor %s prefix-list %s_OUT out\n  neighbor %s maximum-prefix 1\n", peer.Address, peer.Address, name, peer.Address, name, peer.Address)
-	}
-	b.WriteString(" exit-address-family\nexit\n")
-	return b.String()
-}
 
 // Only an owned BGP instance and names under its marker prefix may be removed.
 // Static routes, other protocols and /etc/frr/frr.conf are never rewritten.
@@ -206,32 +181,36 @@ func (e Engine) withdrawBGP(ctx context.Context) error {
 		return err
 	}
 	routers := bgpRouters(config)
-	commands := []string{}
+	removal := bgpFRRRemovalData{}
 	if len(routers) > 0 {
 		if len(routers) != 1 || routers[0] != owner.ASN || !strings.Contains(config, "ip prefix-list "+e.bgpPrefix()+"OWNER ") {
 			return errors.New("BGP ownership changed; refusing cleanup")
 		}
-		commands = append(commands, fmt.Sprintf("no router bgp %d", owner.ASN))
+		removal.RouterASN = owner.ASN
 	}
 	seen := map[string]bool{}
 	for _, line := range strings.Split(config, "\n") {
 		fields := strings.Fields(line)
-		command := ""
+		object := bgpFRRRemovalObject{}
 		if len(fields) > 2 && fields[0] == "ip" && fields[1] == "prefix-list" && e.ownedFilter(fields[2]) {
-			command = "no ip prefix-list " + fields[2]
+			object.PrefixList = fields[2]
 		}
 		if len(fields) > 1 && fields[0] == "route-map" && e.ownedFilter(fields[1]) {
-			command = "no route-map " + fields[1]
+			object.RouteMap = fields[1]
 		}
-		if command != "" && !seen[command] {
-			commands = append(commands, command)
-			seen[command] = true
+		if object.PrefixList != "" || object.RouteMap != "" {
+			key := "prefix-list:" + object.PrefixList + "route-map:" + object.RouteMap
+			if !seen[key] {
+				removal.Objects = append(removal.Objects, object)
+				seen[key] = true
+			}
 		}
 	}
+	commands := renderBGPRemoval(removal)
 	if len(commands) == 0 {
 		return nil
 	}
-	if err = identity.WritePrivate(e.Directory, "routing-remove.conf", []byte(strings.Join(commands, "\n")+"\n")); err != nil {
+	if err = identity.WritePrivate(e.Directory, "routing-remove.conf", []byte(commands)); err != nil {
 		return err
 	}
 	_, err = e.Run(ctx, "vtysh", []string{"-f", filepath.Join(e.Directory, "routing-remove.conf")}, "")

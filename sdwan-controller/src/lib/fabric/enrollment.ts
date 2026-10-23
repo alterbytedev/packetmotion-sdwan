@@ -1,14 +1,15 @@
 import 'server-only';
 import { createHash, randomBytes } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { lockTopology, detachWireguardNode } from './wireguard-plan';
 import { getDatabase } from '../db';
+import { auditCreation } from './audit';
 import { FabricError } from './authorization';
 import { mutate } from './inventory';
-import { auditCreation } from './audit';
+import { assertInterfaceRetired } from './network-reservations';
 import { signDeviceCertificate } from './pki';
 import type { Actor } from './types';
 import { nodeIdInput } from './validation';
+import { detachWireguardNode, lockTopology } from './wireguard-plan';
 
 export async function issueToken(client: PoolClient, actor: Actor, nodeId: string) {
   const token = `pm_enroll_${randomBytes(32).toString('hex')}`;
@@ -34,8 +35,14 @@ export async function reissueEnrollment(actor: Actor | null, nodeId: string) {
     if (node.rows[0].enrolled_at) {
       if (node.rows[0].last_seen_at)
         throw new FabricError(409, 'An active device cannot have its enrollment reset.');
-      await client.query('UPDATE device_certificates SET revoked_at=now() WHERE node_id=$1 AND revoked_at IS NULL', [nodeId]);
-      await client.query('UPDATE enrollment_tokens SET revoked_at=now() WHERE node_id=$1 AND revoked_at IS NULL', [nodeId]);
+      await client.query(
+        'UPDATE device_certificates SET revoked_at=now() WHERE node_id=$1 AND revoked_at IS NULL',
+        [nodeId],
+      );
+      await client.query(
+        'UPDATE enrollment_tokens SET revoked_at=now() WHERE node_id=$1 AND revoked_at IS NULL',
+        [nodeId],
+      );
       await client.query('UPDATE nodes SET enrolled_at=NULL WHERE id=$1', [nodeId]);
       await auditCreation(client, fresh, 'device.enrollment_reset', nodeId);
     }
@@ -65,21 +72,77 @@ export async function archiveDevice(actor: Actor | null, nodeId: string) {
   return mutate(actor, async (client, fresh) => {
     await lockTopology(client);
     const current = await client.query<{ archived_at: string | null }>(
-      'SELECT archived_at FROM nodes WHERE id=$1 FOR UPDATE', [nodeId],
+      'SELECT archived_at FROM nodes WHERE id=$1 FOR UPDATE',
+      [nodeId],
     );
     if (!current.rowCount) throw new FabricError(404, 'Device not found.');
     if (current.rows[0].archived_at) return { archived: true };
+    await assertInterfaceRetired(client, nodeId);
     await client.query(
       'UPDATE nodes SET archived_at=now(),revoked_at=COALESCE(revoked_at,now()) WHERE id=$1',
       [nodeId],
     );
-    await client.query('UPDATE enrollment_tokens SET revoked_at=COALESCE(revoked_at,now()) WHERE node_id=$1', [nodeId]);
-    await client.query('UPDATE device_certificates SET revoked_at=COALESCE(revoked_at,now()) WHERE node_id=$1', [nodeId]);
+    await client.query(
+      'UPDATE enrollment_tokens SET revoked_at=COALESCE(revoked_at,now()) WHERE node_id=$1',
+      [nodeId],
+    );
+    await client.query(
+      'UPDATE device_certificates SET revoked_at=COALESCE(revoked_at,now()) WHERE node_id=$1',
+      [nodeId],
+    );
     // Keep /31 and Hub-port reservations while withdrawing active peer plans.
     await detachWireguardNode(client, nodeId, fresh.email);
     await auditCreation(client, fresh, 'device.archived', nodeId);
     return { archived: true };
   });
+}
+
+export async function permanentlyDeleteDevices(actor: Actor | null, value: unknown) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 100)
+    throw new FabricError(400, 'Select between 1 and 100 archived devices.');
+  const nodeIds = [
+    ...new Set(
+      value.map((id) => {
+        if (typeof id !== 'string') throw new FabricError(400, 'Invalid device selection.');
+        return nodeIdInput(id);
+      }),
+    ),
+  ];
+  if (nodeIds.length !== value.length)
+    throw new FabricError(400, 'The selection contains duplicate devices.');
+  return mutate(actor, async (client, fresh) => {
+    await lockTopology(client);
+    const nodes = await client.query<{ id: string; archived_at: string | null }>(
+      'SELECT id, archived_at FROM nodes WHERE id=ANY($1::uuid[]) ORDER BY id FOR UPDATE',
+      [nodeIds],
+    );
+    if (nodes.rowCount !== nodeIds.length)
+      throw new FabricError(
+        404,
+        'One or more devices were not found. Refresh the list and try again.',
+      );
+    if (nodes.rows.some((node) => !node.archived_at))
+      throw new FabricError(409, 'Archive every selected device before permanently deleting it.');
+    for (const nodeId of nodeIds) await assertInterfaceRetired(client, nodeId);
+    for (const nodeId of nodeIds)
+      await auditCreation(client, fresh, 'device.permanently_deleted', nodeId);
+    // Observations reference desired revisions and must be removed before their parent rows.
+    await client.query('DELETE FROM wireguard_observed WHERE node_id=ANY($1::uuid[])', [nodeIds]);
+    await client.query('DELETE FROM config_acknowledgements WHERE node_id=ANY($1::uuid[])', [
+      nodeIds,
+    ]);
+    await client.query('DELETE FROM desired_configs WHERE node_id=ANY($1::uuid[])', [nodeIds]);
+    await client.query('DELETE FROM device_certificates WHERE node_id=ANY($1::uuid[])', [nodeIds]);
+    await client.query('DELETE FROM enrollment_tokens WHERE node_id=ANY($1::uuid[])', [nodeIds]);
+    await client.query('DELETE FROM device_telemetry WHERE node_id=ANY($1::uuid[])', [nodeIds]);
+    await client.query('DELETE FROM nodes WHERE id=ANY($1::uuid[])', [nodeIds]);
+    return { deleted: nodeIds.length, ids: nodeIds };
+  });
+}
+
+export async function permanentlyDeleteDevice(actor: Actor | null, nodeId: string) {
+  const result = await permanentlyDeleteDevices(actor, [nodeId]);
+  return { deleted: true, id: result.ids[0] };
 }
 
 export async function enrollDevice(value: unknown) {

@@ -219,6 +219,14 @@ func (e Engine) owns(l link) bool {
 	return l.Group == e.group() && interfaceName.MatchString(l.Name) && l.Info.Kind == "wireguard"
 }
 
+// CheckActivation performs existing read-only validation before a local service opt-in.
+func (e Engine) CheckActivation(ctx context.Context, plan Plan) error {
+	if e.Run == nil {
+		e.Run = Command
+	}
+	return e.preflight(ctx, plan)
+}
+
 // Preflight rejects collisions with host routes and foreign interfaces. Only routes
 // created by our own interfaces are excluded from overlap checks.
 func (e Engine) preflight(ctx context.Context, plan Plan) error {

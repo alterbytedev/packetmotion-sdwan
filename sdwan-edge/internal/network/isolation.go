@@ -13,9 +13,12 @@ import (
 func (e Engine) ensureIsolation(ctx context.Context) error { return e.reconcileIsolation(ctx, false) }
 func (e Engine) removeIsolation(ctx context.Context) error { return e.reconcileIsolation(ctx, true) }
 func (e Engine) reconcileIsolation(ctx context.Context, remove bool) error {
-	name := "pmwg" + e.group()
-	comment := "PacketMotion WireGuard " + e.group()
-	data, err := e.Run(ctx, "nft", []string{"-j", "list", "tables"}, "")
+	rules := fmt.Sprintf(" meta iifgroup %s drop;\n meta oifgroup %s drop;\n", e.group(), e.group())
+	return reconcileOwnedIsolation(ctx, e.Run, "pmwg"+e.group(), "PacketMotion WireGuard "+e.group(), rules, remove)
+}
+
+func reconcileOwnedIsolation(ctx context.Context, run Runner, name, comment, rules string, remove bool) error {
+	data, err := run(ctx, "nft", []string{"-j", "list", "tables"}, "")
 	if err != nil {
 		return err
 	}
@@ -38,7 +41,7 @@ func (e Engine) reconcileIsolation(ctx context.Context, remove bool) error {
 	}
 	script := ""
 	if exists {
-		data, err = e.Run(ctx, "nft", []string{"-j", "list", "table", "inet", name}, "")
+		data, err = run(ctx, "nft", []string{"-j", "list", "table", "inet", name}, "")
 		if err != nil {
 			return err
 		}
@@ -68,10 +71,10 @@ func (e Engine) reconcileIsolation(ctx context.Context, remove bool) error {
 		if !exists {
 			return nil
 		}
-		_, err = e.Run(ctx, "nft", []string{"-f", "/dev/stdin"}, script)
+		_, err = run(ctx, "nft", []string{"-f", "/dev/stdin"}, script)
 		return err
 	}
-	script += fmt.Sprintf("table inet %s {\n comment \"%s\";\n chain forward {\n type filter hook forward priority -300; policy accept;\n meta iifgroup %s drop;\n meta oifgroup %s drop;\n }\n}\n", name, comment, e.group(), e.group())
-	_, err = e.Run(ctx, "nft", []string{"-f", "/dev/stdin"}, script)
+	script += fmt.Sprintf("table inet %s {\n comment \"%s\";\n chain forward {\n type filter hook forward priority -300; policy accept;\n%s }\n}\n", name, comment, rules)
+	_, err = run(ctx, "nft", []string{"-f", "/dev/stdin"}, script)
 	return err
 }

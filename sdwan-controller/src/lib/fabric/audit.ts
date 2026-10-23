@@ -13,7 +13,8 @@ export async function auditCreation(
     | 'device.revoked'
     | 'config.published'
     | 'node.renamed'
-    | 'device.archived',
+    | 'device.archived'
+    | 'device.permanently_deleted',
   resourceId: string,
 ) {
   await client.query(

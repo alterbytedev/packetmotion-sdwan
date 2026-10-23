@@ -31,6 +31,12 @@ func execute(args []string, stdout, stderr io.Writer) error {
 		return errors.New("usage: fabric-agent [--version|--help] | enroll|run|status [options]")
 	}
 	command := args[0]
+	if command == "interface-guard" || command == "interface-worker" {
+		return interfaceGuardCLI(args[1:], command == "interface-worker", stderr)
+	}
+	if command == "network" {
+		return networkCLI(args[1:], stdout)
+	}
 	if command == "version" {
 		fmt.Fprintln(stdout, agent.Version)
 		return nil
@@ -41,7 +47,7 @@ func execute(args []string, stdout, stderr io.Writer) error {
 	}
 	if command == "--help" || command == "-help" || command == "-h" || command == "help" {
 		fmt.Fprintln(stdout, "Usage: fabric-agent [--version] [--help] | enroll|run|status [options]")
-		fmt.Fprintln(stdout, "Commands: enroll, run, version, status, reset-network")
+		fmt.Fprintln(stdout, "Commands: enroll, run, version, status, reset-network, network")
 		return nil
 	}
 	if command != "enroll" && command != "run" && command != "status" && command != "reset-network" {
@@ -70,7 +76,7 @@ func execute(args []string, stdout, stderr io.Writer) error {
 		expected = flags.String("expected-node-id", "", "expected dashboard device ID")
 		check = flags.Bool("check", false, "check controller authentication without applying configuration")
 	} else {
-		wireguard = flags.Bool("enable-wireguard", false, "enable owned WireGuard interface apply (requires NET_ADMIN and isolated validation)")
+		wireguard = flags.Bool("enable-wireguard", os.Getenv("FABRIC_WIREGUARD_ENABLED") == "1", "enable owned WireGuard interface apply (requires NET_ADMIN and isolated validation)")
 		routing = flags.Bool("enable-routing", false, "enable locally authorized LAN address and FRR BGP apply (requires --enable-wireguard and --lan-interface)")
 		lanInterface = flags.String("lan-interface", "", "locally authorized physical LAN interface for routing apply")
 		once = flags.Bool("once", false, "one management cycle")
@@ -180,7 +186,7 @@ func execute(args []string, stdout, stderr io.Writer) error {
 			desired: func(callCtx context.Context, wait time.Duration) (time.Duration, error) {
 				return agent.ReconcileWait(callCtx, client, &state, *directory, wait)
 			},
-			snapshot: func() agent.Telemetry { return agent.Snapshot(start) },
+			snapshot: func() agent.Telemetry { return agent.Snapshot(start, *directory, state.NodeID) },
 			now:      time.Now,
 			report:   report,
 		}

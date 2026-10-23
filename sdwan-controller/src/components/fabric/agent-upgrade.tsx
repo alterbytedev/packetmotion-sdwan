@@ -33,7 +33,7 @@ export function AgentUpgrade({ releases }: { releases: AgentRelease[] }) {
         {releases.length ? <>
           <label className="block space-y-2 text-sm font-medium" htmlFor="agent-release-version">
             Release version
-            <Select id="agent-release-version" value={version} onChange={(event) => setVersion(event.target.value)}>
+            <Select controlSize="sm" id="agent-release-version" value={version} onChange={(event) => setVersion(event.target.value)}>
               {releases.map((release) => <option key={release.version} value={release.version}>{release.version}</option>)}
             </Select>
           </label>

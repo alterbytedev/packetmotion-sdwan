@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const Version = "0.3.3"
+const Version = "0.4.0"
 
 type Enrolled struct {
 	NodeID      string `json:"nodeId"`
@@ -34,11 +34,12 @@ type Enrolled struct {
 	AgentURL    string `json:"agentUrl"`
 }
 type Desired struct {
-	Unchanged         bool               `json:"unchanged"`
-	Revision          int                `json:"revision"`
-	Payload           json.RawMessage    `json:"payload"`
-	Checksum          string             `json:"checksum"`
-	DiagnosticRequest *DiagnosticRequest `json:"diagnosticRequest,omitempty"`
+	InterfaceRequest  *network.InterfaceRequest `json:"interfaceRequest,omitempty"`
+	Unchanged         bool                      `json:"unchanged"`
+	Revision          int                       `json:"revision"`
+	Payload           json.RawMessage           `json:"payload"`
+	Checksum          string                    `json:"checksum"`
+	DiagnosticRequest *DiagnosticRequest        `json:"diagnosticRequest,omitempty"`
 }
 type DiagnosticRequest struct {
 	RequestID string `json:"requestId"`
@@ -52,17 +53,22 @@ type Config struct {
 	PollIntervalSeconds int           `json:"pollIntervalSeconds"`
 }
 type Interface struct {
-	Name string `json:"name"`
-	Up   bool   `json:"up"`
-	MTU  int    `json:"mtu"`
+	Kind       string    `json:"kind,omitempty"`
+	ParentName string    `json:"parentName,omitempty"`
+	VLANID     int       `json:"vlanId,omitempty"`
+	Name       string    `json:"name"`
+	Up         bool      `json:"up"`
+	MTU        int       `json:"mtu"`
+	Addresses  *[]string `json:"addresses,omitempty"`
 }
 type Telemetry struct {
-	EventID       string      `json:"eventId"`
-	AgentVersion  string      `json:"agentVersion"`
-	OS            string      `json:"os"`
-	Arch          string      `json:"arch"`
-	UptimeSeconds int64       `json:"uptimeSeconds"`
-	Interfaces    []Interface `json:"interfaces"`
+	InterfaceApply *network.InterfaceCapability `json:"interfaceApply,omitempty"`
+	EventID        string                       `json:"eventId"`
+	AgentVersion   string                       `json:"agentVersion"`
+	OS             string                       `json:"os"`
+	Arch           string                       `json:"arch"`
+	UptimeSeconds  int64                        `json:"uptimeSeconds"`
+	Interfaces     []Interface                  `json:"interfaces"`
 }
 
 func rebindPendingIdentity(previous identity.State, address, serverCA string, allowLocal bool) (identity.State, error) {
@@ -139,19 +145,60 @@ func Enroll(ctx context.Context, address, serverCA, token, directory string, all
 	}
 	return state, identity.Save(directory, state)
 }
-func Snapshot(start time.Time) Telemetry {
+func Snapshot(start time.Time, location ...string) Telemetry {
 	var id [16]byte
 	_, _ = rand.Read(id[:])
 	id[6] = (id[6] & 0x0f) | 0x40
 	id[8] = (id[8] & 0x3f) | 0x80
 	snapshot := Telemetry{EventID: fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:16]), AgentVersion: Version, OS: runtime.GOOS, Arch: runtime.GOARCH, UptimeSeconds: int64(time.Since(start).Seconds()), Interfaces: []Interface{}}
 	interfaces, err := net.Interfaces()
+	addressBudget := 256
 	if err == nil {
 		for _, entry := range interfaces {
-			snapshot.Interfaces = append(snapshot.Interfaces, Interface{Name: entry.Name, Up: entry.Flags&net.FlagUp != 0, MTU: entry.MTU})
+			item := Interface{Name: entry.Name, Up: entry.Flags&net.FlagUp != 0, MTU: entry.MTU}
+			if addresses, addressErr := entry.Addrs(); addressErr == nil {
+				reported := []string{}
+				for _, address := range addresses {
+					if addressBudget == 0 {
+						break
+					}
+					if _, _, parseErr := net.ParseCIDR(address.String()); parseErr == nil && len(address.String()) <= 64 {
+						reported = append(reported, address.String())
+						addressBudget--
+						if len(reported) == 16 {
+							break
+						}
+					}
+				}
+				if len(addresses) == 0 || len(reported) > 0 {
+					item.Addresses = &reported
+				}
+			}
+			snapshot.Interfaces = append(snapshot.Interfaces, item)
 			if len(snapshot.Interfaces) == 64 {
 				break
 			}
+		}
+	}
+	metadataCtx, cancelMetadata := context.WithTimeout(context.Background(), 2*time.Second)
+	metadata, metadataErr := network.Inspect(metadataCtx, nil)
+	cancelMetadata()
+	if metadataErr == nil {
+		for index := range snapshot.Interfaces {
+			for _, item := range metadata.Interfaces {
+				if item.Name == snapshot.Interfaces[index].Name {
+					snapshot.Interfaces[index].Kind = item.Kind
+					snapshot.Interfaces[index].ParentName = item.ParentName
+					snapshot.Interfaces[index].VLANID = item.VLANID
+					break
+				}
+			}
+		}
+	}
+	if len(location) == 2 {
+		var capability network.InterfaceCapability
+		if network.ReadInterfaceFile(location[0], "interface-capability.json", &capability) == nil && capability.NodeID == location[1] && capability.ProtocolVersion == 1 && capability.Mode == "dedicated-static" && len(capability.Interfaces) <= 16 && time.Since(interfaceDeadline(capability.UpdatedAt)) >= -5*time.Second && time.Since(interfaceDeadline(capability.UpdatedAt)) < 15*time.Second {
+			snapshot.InterfaceApply = &capability
 		}
 	}
 	return snapshot
@@ -206,6 +253,9 @@ func registerWireGuardKey(ctx context.Context, client *controller.Client, state 
 }
 
 func ReconcileWait(ctx context.Context, client *controller.Client, state *identity.State, directory string, wait time.Duration) (interval time.Duration, resultErr error) {
+	if wait > time.Second && interfaceCommitInProgress(directory) {
+		wait = time.Second
+	}
 	registrationErr := registerWireGuardKey(ctx, client, state, directory)
 	// Registration retries must not prevent desired-state staging or acknowledgement.
 	defer func() { resultErr = errors.Join(resultErr, registrationErr) }()
@@ -245,6 +295,8 @@ func ReconcileWait(ctx context.Context, client *controller.Client, state *identi
 	if err := client.Request(ctx, http.MethodGet, path, nil, &desired); err != nil {
 		return 0, err
 	}
+	interfaceErr := reconcileInterfaceCommit(ctx, client, state, directory, desired.InterfaceRequest)
+	defer func() { resultErr = errors.Join(resultErr, interfaceErr) }()
 	// Diagnostic collection is independent of config parsing, staging, ack, and
 	// optional local network apply. The report describes state at check-in time.
 	diagnosticErr := reportDeviceState(ctx, client, state, directory, desired.DiagnosticRequest)
@@ -423,6 +475,9 @@ func reconcileWireguard(ctx context.Context, client *controller.Client, state *i
 			client.HTTP.CloseIdleConnections()
 			return client.Request(checkCtx, http.MethodGet, "/api/agent/v1/desired", nil, nil)
 		})
+		if errors.Is(applyErr, network.ErrReconcileBusy) {
+			return nil
+		}
 		status = "failed"
 		if applyErr == nil {
 			handshakes, applyErr = engine.Handshakes(ctx, plan)

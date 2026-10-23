@@ -89,19 +89,19 @@ export function OperatorManager({ role }: { role: OperatorRole }) {
         <form onSubmit={submit} className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-[1fr_auto_auto]">
           <label htmlFor="operator-email" className="space-y-2 text-sm">
             <span>Email address</span>
-            <Input id="operator-email" name="email" type="email" required maxLength={254} autoComplete="off" />
+            <Input controlSize="md" id="operator-email" name="email" type="email" required maxLength={254} autoComplete="off" />
           </label>
           {role === 'superadmin' ? (
             <label htmlFor="operator-role" className="space-y-2 text-sm">
               <span>Access level</span>
-              <Select id="operator-role" name="role" defaultValue="admin">
+              <Select controlSize="md" id="operator-role" name="role" defaultValue="admin">
                 <option value="admin">Admin</option>
                 <option value="viewer">User (viewer)</option>
               </Select>
             </label>
           ) : <input type="hidden" name="role" value="viewer" />}
           <div className="flex items-end">
-            <Button type="submit" disabled={pending}><CirclePlus /> Add operator</Button>
+            <Button size="md" type="submit" disabled={pending}><CirclePlus /> Add operator</Button>
           </div>
         </form>
         <div className="overflow-x-auto rounded-lg border">

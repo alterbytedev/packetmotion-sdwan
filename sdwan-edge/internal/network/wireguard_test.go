@@ -157,3 +157,37 @@ func TestFailedApplyRestoresEmptyPlan(t *testing.T) {
 		t.Fatal("incorrect restored plan")
 	}
 }
+
+func TestLocalActivationPreflightIsReadOnly(t *testing.T) {
+	engine := Engine{Directory: privateDirectory(t), NodeID: "node", Run: func(_ context.Context, name string, args []string, input string) ([]byte, error) {
+		if name != "ip" || len(args) == 0 || args[0] != "-j" || input != "" {
+			t.Fatal("activation preflight mutated host")
+		}
+		return []byte(`[]`), nil
+	}}
+	if err := engine.CheckActivation(context.Background(), Plan{Tunnels: []Tunnel{testTunnel(t)}}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(engine.Directory)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("activation preflight wrote state")
+	}
+}
+
+// The local CLI constructs an Engine without a custom runner. A cancelled
+// context exercises that production path without reading or changing host state.
+func TestLocalActivationPreflightDefaultsRunner(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	engine := Engine{Directory: privateDirectory(t), NodeID: "node"}
+	if err := engine.CheckActivation(ctx, Plan{}); err == nil {
+		t.Fatal("cancelled preflight unexpectedly succeeded")
+	}
+	entries, err := os.ReadDir(engine.Directory)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("cancelled activation wrote state")
+	}
+	if engine.Run != nil {
+		t.Fatal("value receiver changed caller state")
+	}
+}

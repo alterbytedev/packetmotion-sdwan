@@ -32,6 +32,11 @@ test('inventory OpenAPI is valid and matches implemented protected methods', asy
     assert.ok(device[method].responses['403']);
   }
   assert.match(device.delete.description, /WireGuard address\/port reservations are retained/);
+  const permanentRoute = readFileSync('src/app/api/operator/nodes/permanent/route.ts', 'utf8');
+  const permanentContract = spec.paths['/api/operator/nodes/permanent'].post;
+  assert.match(permanentRoute, /export function POST\(/);
+  assert.deepEqual(permanentContract.security, [{ operatorSession: [] }]);
+  assert.equal(permanentContract.requestBody.content['application/json'].schema.properties.ids.maxItems, 100);
   const httpHosts = spec.paths['/api/operator/controller-settings/insecure-http-hosts'];
   const httpHostsRoute = readFileSync('src/app/api/operator/controller-settings/insecure-http-hosts/route.ts', 'utf8');
   for (const method of ['get', 'put']) {
@@ -78,4 +83,23 @@ test('connection status contract exposes bounded lifecycle facts, not runtime lo
   assert.equal(schema.properties.events.maxItems, 10);
   assert.ok(schema.properties.tokenStatus.enum.includes('expired'));
   assert.ok(spec.components.schemas.EnrollmentToken.properties.nodeId);
+});
+
+test('interface drafts remain inactive and require safe commit settings', async () => {
+  const spec = await SwaggerParser.validate('../api/openapi.yaml', { resolve: { external: false } });
+  const path = spec.paths['/api/operator/nodes/{id}/network-draft'];
+  for (const method of ['get', 'put']) assert.deepEqual(path[method].security, [{ operatorSession: [] }]);
+  assert.equal(spec.components.schemas.NetworkDraftInput.properties.safeCommitSeconds.const, 60);
+  assert.equal(spec.components.schemas.NetworkDraftInput.properties.interfaces.maxItems, 16);
+  assert.match(path.put.description, /Does not publish agent desired revisions/);
+});
+
+test('interface commits retain authenticated scope and bounded telemetry', async () => {
+ const spec = await SwaggerParser.validate('../api/openapi.yaml', { resolve: { external: false } });
+ for (const endpoint of ['interface-result','interface-confirm']) assert.deepEqual(spec.paths[`/api/agent/v1/${endpoint}`].post.security,[{deviceCertificate:[]}]);
+ assert.ok(spec.components.schemas.Desired.properties.interfaceRequest);
+ assert.ok(spec.components.schemas.DesiredUnchanged.properties.interfaceRequest);
+ assert.equal(spec.components.schemas.Heartbeat.properties.interfaces.items.properties.addresses.maxItems,16);
+ assert.equal(spec.components.schemas.InterfaceConfiguration.properties.safeCommitSeconds.const,60);
+ assert.deepEqual(spec.paths['/api/operator/nodes/{id}/network-draft/apply'].post.security,[{operatorSession:[]}]);
 });

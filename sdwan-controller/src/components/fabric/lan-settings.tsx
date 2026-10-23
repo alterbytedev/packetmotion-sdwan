@@ -45,10 +45,10 @@ export function LanSettings({ node, role }: { node: NodeRecord; role: OperatorRo
     <CardHeader><CardTitle>LAN network</CardTitle><CardDescription>Save the appliance LAN address and the exact subnet to advertise.</CardDescription></CardHeader>
     <CardContent><form onSubmit={save} className="space-y-4">
       <fieldset disabled={readOnly || busy || version === null} className="space-y-4">
-        <div className="space-y-2"><label htmlFor="lan-interface" className="text-sm font-medium">LAN interface</label><Input id="lan-interface" value={interfaceName} onChange={(event) => setInterfaceName(event.target.value)} placeholder="ens34" maxLength={15} required /></div>
-        <div className="space-y-2"><label htmlFor="lan-address" className="text-sm font-medium">Appliance LAN address / prefix</label><Input id="lan-address" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="10.61.0.1/24" required /></div>
-        <div className="space-y-2"><label htmlFor="lan-prefix" className="text-sm font-medium">Advertised LAN subnet</label><Input id="lan-prefix" value={prefix} onChange={(event) => setPrefix(event.target.value)} placeholder="10.61.0.0/24" required /></div>
-        {!readOnly && <Button type="submit" disabled={protectedPrefixes.length === 0}>{busy ? 'Saving…' : 'Save LAN profile'}</Button>}
+        <div className="space-y-2"><label htmlFor="lan-interface" className="text-sm font-medium">LAN interface</label><Input controlSize="md" id="lan-interface" value={interfaceName} onChange={(event) => setInterfaceName(event.target.value)} placeholder="ens34" maxLength={15} required /></div>
+        <div className="space-y-2"><label htmlFor="lan-address" className="text-sm font-medium">Appliance LAN address / prefix</label><Input controlSize="md" id="lan-address" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="10.61.0.1/24" required /></div>
+        <div className="space-y-2"><label htmlFor="lan-prefix" className="text-sm font-medium">Advertised LAN subnet</label><Input controlSize="md" id="lan-prefix" value={prefix} onChange={(event) => setPrefix(event.target.value)} placeholder="10.61.0.0/24" required /></div>
+        {!readOnly && <Button size="md" type="submit" disabled={protectedPrefixes.length === 0}>{busy ? 'Saving…' : 'Save LAN profile'}</Button>}
       </fieldset>
       <p className="text-xs leading-5 text-muted-foreground">Protected networks: {protectedPrefixes.join(', ') || 'not configured — a superadmin must configure Settings first'}. The advertised subnet must match the LAN address network. Management-interface ownership must also pass on-device preflight before any future apply.</p>
       <p className="text-xs leading-5 text-muted-foreground">This saves configuration intent. Current tunnel-transit isolation remains active until routing and explicit permissions are validated.</p>

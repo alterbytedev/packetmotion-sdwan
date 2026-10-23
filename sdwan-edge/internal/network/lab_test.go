@@ -73,6 +73,16 @@ func TestNamespaceWireguardLifecycle(t *testing.T) {
 			return data, nil
 		}
 	}
+	// Exercise the same nil-runner path used by the local activation CLI against
+	// real iproute2, entirely inside this disposable outer namespace.
+	activation := Engine{Directory: privateDirectory(t), NodeID: "activation"}
+	if err := activation.CheckActivation(ctx, Plan{}); err != nil {
+		t.Fatal("default activation runner:", err)
+	}
+	entries, err := os.ReadDir(activation.Directory)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("activation preflight wrote private state")
+	}
 	run("ip", "link", "set", "lo", "up")
 	edgePID := namespace()
 	hubPIDs := []int{namespace(), namespace()}

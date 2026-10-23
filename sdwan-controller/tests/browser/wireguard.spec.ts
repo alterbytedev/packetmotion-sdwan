@@ -27,25 +27,33 @@ test('save tunnel pool, hub endpoint and multiple selected hubs; viewers cannot 
     });
     for (const [index, id] of hubs.entries()) {
       await page.goto(`/dashboard/devices/${id}`);
+      await page.getByRole('tab', { name: 'Overlay', exact: true }).click();
       await page.getByLabel('Hub endpoint IPv4').fill(`192.168.99.${index + 1}`);
-      await page.getByRole('button', { name: 'Save hub endpoint' }).click();
-      await expect(page.getByText('Connections saved and desired revisions published.', { exact: false })).toBeVisible();
+      await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Deploy changes', exact: true })).toBeEnabled();
+      await page.getByRole('button', { name: 'Deploy changes', exact: true }).click();
+      await expect(page.getByText('Configuration published to the affected devices.', { exact: false })).toBeVisible();
     }
     await page.goto(`/dashboard/devices/${edge}`);
+    await page.getByRole('tab', { name: 'Overlay', exact: true }).click();
     await page.getByLabel('WG Browser Hub A', { exact: false }).check();
     await page.getByLabel('WG Browser Hub B', { exact: false }).check();
-    await page.getByRole('button', { name: 'Save hub connections' }).click();
+    await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+    await page.getByRole('button', { name: 'Deploy changes', exact: true }).click();
     await expect(page.getByText('Allocated tunnel addresses')).toBeVisible();
     await page.reload();
+    await page.getByRole('tab', { name: 'Overlay', exact: true }).click();
     await expect(page.getByLabel('WG Browser Hub A', { exact: false })).toBeChecked();
     await expect(page.getByLabel('WG Browser Hub B', { exact: false })).toBeChecked();
-    await expect(page.getByText('Network apply: Not reported')).toBeVisible();
+    await expect(page.getByText('Network apply: Not reported', { exact: false })).toBeVisible();
     // Capture actual desktop/mobile content for inspection without changing baselines.
     await page.screenshot({ path: testInfo.outputPath('wireguard-device.png'), fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await database(pool => pool.query("UPDATE operators SET role='viewer' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]));
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Save hub connections' })).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Overlay', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toHaveCount(0);
     await expect(page.getByLabel('WG Browser Hub A', { exact: false })).toBeDisabled();
     expect((await page.request.put(`/api/operator/nodes/${edge}/wireguard`, {
       headers: { Origin: 'http://127.0.0.1:3107' }, data: { expectedVersion: 1, hubIds: [] },

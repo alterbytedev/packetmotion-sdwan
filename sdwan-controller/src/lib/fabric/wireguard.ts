@@ -1,3 +1,4 @@
+import { assertInterfacePrefixAvailable } from './network-reservations';
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '../db';
@@ -32,6 +33,7 @@ export async function saveTunnelSettings(actor: Actor | null, value: unknown) {
     if ((prior.rows[0]?.version ?? 0) !== version)
       throw new FabricError(409, 'Tunnel settings changed; reload and retry.');
     if (prior.rows[0]?.pool !== pool) {
+      await assertInterfacePrefixAvailable(client,pool);
       if ((await client.query('SELECT 1 FROM routing_settings r CROSS JOIN unnest(r.protected_prefixes) p WHERE p && $1::cidr LIMIT 1', [pool])).rowCount)
         throw new FabricError(409, 'Tunnel pool overlaps a protected management or underlay network.');
       if ((await client.query('SELECT 1 FROM wireguard_links LIMIT 1')).rowCount)
@@ -72,72 +74,150 @@ export async function readWireguardDevice(actor: Actor | null, nodeId: string) {
   return { ...node.rows[0], hubs: hubs.rows, links: links.rows, observed: observed.rows[0] ?? null, desiredRevision: desired.rows[0]?.revision ?? null };
 }
 
+// Canonical ordering makes draft equality independent of hub checkbox order.
+export function normalizeWireguardSettings(kind: string, input: Record<string, unknown>) {
+  if (kind === 'hub') {
+    if (input.hubIds !== undefined) throw new FabricError(400, 'Hubs cannot select other hubs.');
+    const endpoint = hubEndpoint(input.endpoint);
+    if (
+      !Number.isInteger(input.basePort) ||
+      Number(input.basePort) < 1024 ||
+      Number(input.basePort) > 65408
+    )
+      throw new FabricError(400, 'Hub base UDP port must be 1024–65408.');
+    return { endpoint, basePort: Number(input.basePort) };
+  }
+  if (
+    input.endpoint !== undefined ||
+    input.basePort !== undefined ||
+    !Array.isArray(input.hubIds) ||
+    input.hubIds.length > 8 ||
+    input.hubIds.some(
+      (id) => typeof id !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id),
+    ) ||
+    new Set(input.hubIds.map((id) => String(id).toLowerCase())).size !== input.hubIds.length
+  )
+    throw new FabricError(400, 'Choose up to eight distinct hubs.');
+  return { hubIds: input.hubIds.map((id) => String(id).toLowerCase()).sort() };
+}
+
 export async function saveWireguardDevice(actor: Actor | null, nodeId: string, value: unknown) {
   const input = tunnelObject(value, ['expectedVersion', 'hubIds', 'endpoint', 'basePort']);
+  tunnelVersion(input.expectedVersion);
+  return mutate(actor, (client, fresh) => applyWireguardDevice(client, fresh, nodeId, input));
+}
+
+// Shared publication boundary for the legacy immediate API and explicit draft deploy.
+// The caller owns the transaction and the fresh operator-role check.
+export async function applyWireguardDevice(
+  client: import('pg').PoolClient,
+  fresh: Actor,
+  nodeId: string,
+  input: Record<string, unknown>,
+) {
   const version = tunnelVersion(input.expectedVersion);
-  return mutate(actor, async (client, fresh) => {
-    await lockTopology(client);
-    const node = await client.query('SELECT kind FROM nodes WHERE id=$1 AND revoked_at IS NULL FOR UPDATE', [nodeId]);
-    if (!node.rowCount) throw new FabricError(404, 'Device not found or revoked.');
-    await client.query('INSERT INTO wireguard_devices(node_id) VALUES($1) ON CONFLICT DO NOTHING', [nodeId]);
-    const device = (await client.query('SELECT * FROM wireguard_devices WHERE node_id=$1', [nodeId])).rows[0];
-    if (device.version !== version) throw new FabricError(409, 'Hub settings changed; reload and retry.');
-    let affected = [nodeId];
-    if (node.rows[0].kind === 'hub') {
-      if (input.hubIds !== undefined) throw new FabricError(400, 'Hubs cannot select other hubs.');
-      const endpoint = hubEndpoint(input.endpoint);
-      if (!Number.isInteger(input.basePort) || Number(input.basePort) < 1024 || Number(input.basePort) > 65408)
-        throw new FabricError(400, 'Hub base UDP port must be 1024–65408.');
-      const collision = await client.query(
-        `SELECT 1 FROM wireguard_devices d JOIN nodes n ON n.id=d.node_id
+  await lockTopology(client);
+  const node = await client.query(
+    'SELECT kind FROM nodes WHERE id=$1 AND revoked_at IS NULL FOR UPDATE',
+    [nodeId],
+  );
+  if (!node.rowCount) throw new FabricError(404, 'Device not found or revoked.');
+  input = { ...normalizeWireguardSettings(node.rows[0].kind, input), expectedVersion: version };
+  await client.query('INSERT INTO wireguard_devices(node_id) VALUES($1) ON CONFLICT DO NOTHING', [
+    nodeId,
+  ]);
+  const device = (await client.query('SELECT * FROM wireguard_devices WHERE node_id=$1', [nodeId]))
+    .rows[0];
+  if (device.version !== version)
+    throw new FabricError(409, 'Hub settings changed; reload and retry.');
+  let affected = [nodeId];
+  if (node.rows[0].kind === 'hub') {
+    const endpoint = String(input.endpoint);
+    const collision = await client.query(
+      `SELECT 1 FROM wireguard_devices d JOIN nodes n ON n.id=d.node_id
          WHERE d.node_id<>$1 AND n.kind='hub' AND d.endpoint=$2::inet
            AND int4range(d.base_port,d.base_port+128) && int4range($3::int,$3::int+128) LIMIT 1`,
-        [nodeId, endpoint, input.basePort],
+      [nodeId, endpoint, input.basePort],
+    );
+    if (collision.rowCount)
+      throw new FabricError(409, 'Hub UDP port range overlaps another hub at this endpoint.');
+    const pool = await client.query('SELECT 1 FROM wireguard_settings WHERE $1::inet <<= pool', [
+      endpoint,
+    ]);
+    if (pool.rowCount) throw new FabricError(409, 'Hub endpoint cannot be inside the tunnel pool.');
+    if (
+      Number(input.basePort) !== device.base_port &&
+      (await client.query('SELECT 1 FROM wireguard_links WHERE hub_id=$1 LIMIT 1', [nodeId]))
+        .rowCount
+    )
+      throw new FabricError(409, 'Reserved hub ports prevent changing the base port.');
+    await client.query('UPDATE wireguard_devices SET endpoint=$2,base_port=$3 WHERE node_id=$1', [
+      nodeId,
+      endpoint,
+      input.basePort,
+    ]);
+    const peers = await client.query(
+      'SELECT edge_id FROM wireguard_links WHERE hub_id=$1 AND active',
+      [nodeId],
+    );
+    affected = [...affected, ...peers.rows.map((row) => row.edge_id)];
+  } else {
+    const hubIds = input.hubIds as string[];
+    if (hubIds.length && !device.public_key)
+      throw new FabricError(
+        409,
+        'Upgrade and start the Edge agent to register its WireGuard key first.',
       );
-      if (collision.rowCount) throw new FabricError(409, 'Hub UDP port range overlaps another hub at this endpoint.');
-      const pool = await client.query('SELECT 1 FROM wireguard_settings WHERE $1::inet <<= pool', [endpoint]);
-      if (pool.rowCount) throw new FabricError(409, 'Hub endpoint cannot be inside the tunnel pool.');
-      if (Number(input.basePort) !== device.base_port &&
-          (await client.query('SELECT 1 FROM wireguard_links WHERE hub_id=$1 LIMIT 1', [nodeId])).rowCount)
-        throw new FabricError(409, 'Reserved hub ports prevent changing the base port.');
-      await client.query('UPDATE wireguard_devices SET endpoint=$2,base_port=$3 WHERE node_id=$1', [nodeId, endpoint, input.basePort]);
-      const peers = await client.query('SELECT edge_id FROM wireguard_links WHERE hub_id=$1 AND active', [nodeId]);
-      affected = [...affected, ...peers.rows.map((row) => row.edge_id)];
-    } else {
-      if (input.endpoint !== undefined || input.basePort !== undefined || !Array.isArray(input.hubIds) || input.hubIds.length > 8 ||
-          input.hubIds.some((id) => typeof id !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) ||
-          new Set(input.hubIds).size !== input.hubIds.length)
-        throw new FabricError(400, 'Choose up to eight distinct hubs.');
-      const hubIds = input.hubIds as string[];
-      if (hubIds.length && !device.public_key) throw new FabricError(409, 'Upgrade and start the Edge agent to register its WireGuard key first.');
-      const settings = await client.query('SELECT pool::text FROM wireguard_settings');
-      if (hubIds.length && !settings.rowCount) throw new FabricError(409, 'Configure the tunnel address pool in Settings first.');
-      const prior = await client.query('SELECT hub_id FROM wireguard_links WHERE edge_id=$1 AND active', [nodeId]);
-      affected = [...affected, ...prior.rows.map((row) => row.hub_id), ...hubIds];
-      for (const hubId of hubIds) {
-        const hub = await client.query(`SELECT d.* FROM nodes n JOIN wireguard_devices d ON d.node_id=n.id
-          WHERE n.id=$1 AND n.kind='hub' AND n.revoked_at IS NULL AND d.endpoint IS NOT NULL AND d.public_key IS NOT NULL`, [hubId]);
-        if (!hub.rowCount) throw new FabricError(409, 'Selected hub needs an endpoint and a registered WireGuard key.');
-        const existing = await client.query('SELECT id FROM wireguard_links WHERE edge_id=$1 AND hub_id=$2', [nodeId, hubId]);
-        if (existing.rowCount) continue;
-        const allocation = await client.query(`SELECT host(s.pool::inet + g.slot*2)||'/31' AS network
+    const settings = await client.query('SELECT pool::text FROM wireguard_settings');
+    if (hubIds.length && !settings.rowCount)
+      throw new FabricError(409, 'Configure the tunnel address pool in Settings first.');
+    const prior = await client.query(
+      'SELECT hub_id FROM wireguard_links WHERE edge_id=$1 AND active',
+      [nodeId],
+    );
+    affected = [...affected, ...prior.rows.map((row) => row.hub_id), ...hubIds];
+    for (const hubId of hubIds) {
+      const hub = await client.query(
+        `SELECT d.* FROM nodes n JOIN wireguard_devices d ON d.node_id=n.id
+          WHERE n.id=$1 AND n.kind='hub' AND n.revoked_at IS NULL AND d.endpoint IS NOT NULL AND d.public_key IS NOT NULL`,
+        [hubId],
+      );
+      if (!hub.rowCount)
+        throw new FabricError(
+          409,
+          'Selected hub needs an endpoint and a registered WireGuard key.',
+        );
+      const existing = await client.query(
+        'SELECT id FROM wireguard_links WHERE edge_id=$1 AND hub_id=$2',
+        [nodeId, hubId],
+      );
+      if (existing.rowCount) continue;
+      const allocation = await client.query(`SELECT host(s.pool::inet + g.slot*2)||'/31' AS network
           FROM wireguard_settings s CROSS JOIN LATERAL generate_series(0,(1 << (32-masklen(s.pool)))/2-1) AS g(slot)
           WHERE NOT EXISTS (SELECT 1 FROM wireguard_links l WHERE l.network=(host(s.pool::inet+g.slot*2)||'/31')::cidr)
           ORDER BY g.slot LIMIT 1`);
-        if (!allocation.rowCount) throw new FabricError(409, 'Tunnel address pool is exhausted.');
-        const port = await client.query(`SELECT p.port FROM generate_series($2::int,$2::int+127) p(port)
-          WHERE NOT EXISTS (SELECT 1 FROM wireguard_links l WHERE l.hub_id=$1 AND l.hub_port=p.port) ORDER BY p.port LIMIT 1`, [hubId, hub.rows[0].base_port]);
-        if (!port.rowCount) throw new FabricError(409, 'Hub has reached its 128 reserved connection limit.');
-        await client.query('INSERT INTO wireguard_links(id,edge_id,hub_id,network,hub_port) VALUES($1,$2,$3,$4,$5)',
-          [randomUUID(), nodeId, hubId, allocation.rows[0].network, port.rows[0].port]);
-      }
-      await client.query('UPDATE wireguard_links SET active=(hub_id=ANY($2::uuid[])) WHERE edge_id=$1', [nodeId, hubIds]);
+      if (!allocation.rowCount) throw new FabricError(409, 'Tunnel address pool is exhausted.');
+      const port = await client.query(
+        `SELECT p.port FROM generate_series($2::int,$2::int+127) p(port)
+          WHERE NOT EXISTS (SELECT 1 FROM wireguard_links l WHERE l.hub_id=$1 AND l.hub_port=p.port) ORDER BY p.port LIMIT 1`,
+        [hubId, hub.rows[0].base_port],
+      );
+      if (!port.rowCount)
+        throw new FabricError(409, 'Hub has reached its 128 reserved connection limit.');
+      await client.query(
+        'INSERT INTO wireguard_links(id,edge_id,hub_id,network,hub_port) VALUES($1,$2,$3,$4,$5)',
+        [randomUUID(), nodeId, hubId, allocation.rows[0].network, port.rows[0].port],
+      );
     }
-    await client.query('UPDATE wireguard_devices SET version=version+1 WHERE node_id=$1', [nodeId]);
-    await publishWireguardPlans(client, affected, fresh.email);
-    await audit(client, fresh, 'wireguard.device_updated', nodeId);
-    return { saved: true, version: version + 1 };
-  });
+    await client.query(
+      'UPDATE wireguard_links SET active=(hub_id=ANY($2::uuid[])) WHERE edge_id=$1',
+      [nodeId, hubIds],
+    );
+  }
+  await client.query('UPDATE wireguard_devices SET version=version+1 WHERE node_id=$1', [nodeId]);
+  await publishWireguardPlans(client, affected, fresh.email);
+  await audit(client, fresh, 'wireguard.device_updated', nodeId);
+  return { saved: true, version: version + 1, affected: [...new Set(affected)] };
 }
 
 export async function registerWireguardKey(nodeId: string, value: unknown) {

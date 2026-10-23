@@ -84,7 +84,7 @@ export function InsecureHttpAllowlistSettings() {
         </p>
         {message && <Feedback tone={isError ? 'error' : 'success'} presentation="panel">{message}</Feedback>}
         <div className="flex justify-end border-t pt-4">
-          <Button type="button" disabled={busy || saving} onClick={() => void save()}>
+          <Button size="md" type="button" disabled={busy || saving} onClick={() => void save()}>
             {saving ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
             {saving ? 'Saving…' : 'Save allowlist'}
           </Button>

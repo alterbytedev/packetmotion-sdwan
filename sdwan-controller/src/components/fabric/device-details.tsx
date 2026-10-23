@@ -27,10 +27,11 @@ import { formatDateTime, formatDate } from '@/lib/date-format';
 import { useControllerTimeZone } from '@/lib/time-zone-context';
 import type { NodeRecord, OperatorRole } from '@/lib/fabric/types';
 import { AgentConfiguration } from './agent-configuration';
-import { AgentTelemetry } from './agent-telemetry';
+import { AgentTelemetry, useAgentTelemetry } from './agent-telemetry';
 import { DeviceConnectionStatus } from './device-connection-status';
 import { type EnrollmentDetails, EnrollmentInstructions } from './enrollment-details';
 import { LanSettings } from './lan-settings';
+import { UnderlayInterfaces } from './underlay-interfaces';
 import { NetworkConfigurationPreview } from './network-configuration-preview';
 import { WireguardConnections } from './wireguard-connections';
 import { DeviceCommandHistory } from './device-command-history';
@@ -38,9 +39,18 @@ import { DeviceConfigurationSources } from './device-configuration-sources';
 import { AgentUpgrade } from './agent-upgrade';
 import type { AgentRelease } from '@/lib/fabric/agent-releases';
 
-export function DeviceDetails({ node, role, agentReleases }: { node: NodeRecord; role: OperatorRole; agentReleases: AgentRelease[] }) {
+export function DeviceDetails({
+  node,
+  role,
+  agentReleases,
+}: {
+  node: NodeRecord;
+  role: OperatorRole;
+  agentReleases: AgentRelease[];
+}) {
   const { timeZone } = useControllerTimeZone();
   const router = useRouter();
+  const telemetry = useAgentTelemetry(node);
   const [activeTab, setActiveTab] = useState(0);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [enrollment, setEnrollment] = useState<EnrollmentDetails | null>(null);
@@ -49,7 +59,14 @@ export function DeviceDetails({ node, role, agentReleases }: { node: NodeRecord;
   const [renameOpen, setRenameOpen] = useState(false);
   const [name, setName] = useState(node.name);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const tabs = ['Overview', 'Connections', 'Configuration', ...(role === 'superadmin' ? ['Agent upgrade', 'Command history', 'Configuration sources'] : [])];
+  const tabs = ['Overview', 'Underlay', 'Overlay', 'LAN & Routing', 'Advanced'];
+  const tips = [
+    'Start here to check enrollment, controller connectivity, and the latest agent heartbeat.',
+    'Select an interface to configure its IPv4 settings, role and MTU, or manage its VLANs.',
+    'Overlay connects sites through WireGuard. Save a draft, deploy it, then check each peer’s apply and handshake observations.',
+    'Configure the local LAN profile and advertised prefix. Saved settings do not by themselves prove a working BGP session or routed reachability.',
+    'Manage configuration and inspect technical details. A received revision is staged; check Overlay for apply and handshake observations.',
+  ];
   const tabId = (index: number) => `device-${node.id}-tab-${index}`;
   const panelId = (index: number) => `device-${node.id}-panel-${index}`;
   const statusTone =
@@ -151,68 +168,49 @@ export function DeviceDetails({ node, role, agentReleases }: { node: NodeRecord;
           <ArrowLeft aria-hidden="true" /> Back to devices
         </Link>
       </Button>
-      <div
-        className="mb-4 border-b"
-        role="tablist"
-        aria-label="Device details"
-        onKeyDown={handleTabKeyDown}
-      >
-        <div className="grid grid-cols-2 gap-1 sm:flex">
-          {tabs.map((tab, index) => (
-            <button
-              key={tab}
-              ref={(element) => {
-                tabRefs.current[index] = element;
-              }}
-              id={tabId(index)}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === index}
-              aria-controls={panelId(index)}
-              tabIndex={activeTab === index ? 0 : -1}
-              className={`w-full border-b-2 px-4 py-3 text-left text-sm font-medium transition-colors sm:w-auto ${activeTab === index ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-              onClick={() => setActiveTab(index)}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-      </div>
-      <section id={panelId(0)} role="tabpanel" aria-labelledby={tabId(0)} hidden={activeTab !== 0}>
-        <Card className="overflow-hidden">
-          <div className="h-1 bg-gradient-to-r from-primary via-primary/50 to-transparent" />
-          <CardHeader className="gap-5 pb-5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-            <div className="flex min-w-0 flex-1 items-start gap-4">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border bg-muted/50 text-primary">
-                {node.kind === 'hub' ? <Router aria-hidden="true" /> : <Radio aria-hidden="true" />}
+      <Card className="overflow-hidden">
+        <div className="h-1 bg-gradient-to-r from-primary via-primary/50 to-transparent" />
+        <CardHeader className="gap-5 pb-5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+          <div className="flex min-w-0 flex-1 items-start gap-4">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl border bg-muted/50 text-primary">
+              {node.kind === 'hub' ? <Router aria-hidden="true" /> : <Radio aria-hidden="true" />}
+            </div>
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="break-words text-2xl">{node.name}</CardTitle>
+                <Badge className="capitalize">{node.kind === 'hub' ? 'Hub' : 'Edge'}</Badge>
+                <Badge className={statusTone}>
+                  {connectionStatusLabels[node.connectionStatus]}
+                </Badge>
               </div>
-              <div className="min-w-0 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <CardTitle className="break-words text-2xl">{node.name}</CardTitle>
-                  <Badge className="capitalize">{node.kind === 'hub' ? 'Hub' : 'Edge'}</Badge>
-                </div>
-                <CardDescription>{node.siteName} · Device details</CardDescription>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Fingerprint size={14} aria-hidden="true" />
-                    {node.id.slice(0, 8)}…{node.id.slice(-6)}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <Clock3 size={14} aria-hidden="true" />
-                    Added {formatDate(node.createdAt, timeZone)}
-                  </span>
-                </div>
+              <CardDescription>{node.siteName} · Device details</CardDescription>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                  <Fingerprint size={14} aria-hidden="true" />
+                  {node.id.slice(0, 8)}…{node.id.slice(-6)}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Clock3 size={14} aria-hidden="true" />
+                  Added {formatDate(node.createdAt, timeZone)}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Activity size={14} aria-hidden="true" />
+                  Last check-in: {lastSeen || 'Not received'}
+                </span>
               </div>
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
-              <Button type="button" variant="outline" onClick={() => router.refresh()} className="w-full sm:w-auto">
-                <RefreshCw aria-hidden="true" /> Refresh status
-              </Button>
-              {role !== 'viewer' && (
-              <fieldset
-                className="contents"
-                aria-label="Device actions"
-              >
+          </div>
+          <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:flex sm:flex-wrap sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.refresh()}
+              className="w-full sm:w-auto"
+            >
+              <RefreshCw aria-hidden="true" /> Refresh status
+            </Button>
+            {role !== 'viewer' && (
+              <fieldset className="contents" aria-label="Device actions">
                 {['pending', 'enrolling'].includes(node.connectionStatus) && (
                   <Button
                     disabled={pending}
@@ -249,151 +247,208 @@ export function DeviceDetails({ node, role, agentReleases }: { node: NodeRecord;
                   Archive device
                 </Button>
               </fieldset>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border bg-background p-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Activity size={15} aria-hidden="true" />
-                  Controller connection
-                </div>
-                <div className="mt-3">
-                  <Badge className={statusTone}>
-                    <span
-                      className={`size-1.5 rounded-full ${node.connectionStatus === 'management-connected' ? 'bg-emerald-600' : node.connectionStatus === 'revoked' ? 'bg-rose-600' : 'bg-current'}`}
-                    />
-                    {connectionStatusLabels[node.connectionStatus]}
-                  </Badge>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  Configuration revision {node.configRevision ?? '—'}:{' '}
-                  {node.configStatus === 'received'
-                    ? 'received (staged only)'
-                    : (node.configStatus ?? 'not-configured')}
-                  . Data-plane health is unavailable.
-                </p>
-              </div>
-              <div className="rounded-lg border bg-background p-4">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock3 size={15} aria-hidden="true" />
-                  Last check-in
-                </div>
-                <p className="mt-3 text-sm font-medium">{lastSeen || 'No check-in received'}</p>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  {lastSeen
-                    ? 'Most recent management heartbeat received by the controller.'
-                    : 'Enroll the device and start its agent to receive heartbeats.'}
-                </p>
-              </div>
-            </div>
-            <details className="group rounded-lg border bg-muted/20">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
-                <span className="flex items-center gap-2">
-                  <ShieldCheck size={16} className="text-muted-foreground" aria-hidden="true" />
-                  Device identity
-                </span>
-                <span className="text-xs font-normal text-muted-foreground group-open:hidden">
-                  Show ID
-                </span>
-                <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
-                  Hide ID
-                </span>
-              </summary>
-              <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <code className="break-all text-xs text-muted-foreground">{node.id}</code>
-                <Button type="button" variant="outline" size="sm" onClick={copyDeviceId}>
-                  <Copy aria-hidden="true" />
-                  Copy ID
-                </Button>
-              </div>
-            </details>
-            <DeviceConnectionStatus nodeId={node.id} />
-            {error && <Feedback tone="error">{error}</Feedback>}
-            {enrollment && (
-              <EnrollmentInstructions enrollment={enrollment} onClose={() => setEnrollment(null)} />
             )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5 empty:hidden">
+          {error && <Feedback tone="error">{error}</Feedback>}
+          {enrollment && (
+            <EnrollmentInstructions enrollment={enrollment} onClose={() => setEnrollment(null)} />
+          )}
+        </CardContent>
+      </Card>
+      {renameOpen && (
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Rename device</CardTitle>
+            <CardDescription>Device names must be unique within this site.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="flex flex-wrap items-end gap-3" onSubmit={rename}>
+              <div className="min-w-48 flex-1 space-y-2">
+                <label htmlFor="rename-device">Device name</label>
+                <Input
+                  controlSize="md"
+                  id="rename-device"
+                  value={name}
+                  maxLength={100}
+                  required
+                  disabled={pending}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </div>
+              <Button size="md" type="submit" disabled={pending || !name.trim()}>
+                {pending ? 'Saving…' : 'Save name'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                disabled={pending}
+                onClick={() => setRenameOpen(false)}
+              >
+                <X aria-hidden="true" />
+                Cancel
+              </Button>
+            </form>
           </CardContent>
         </Card>
-        <div className="mt-5">
-          <AgentTelemetry key={`telemetry-${node.id}`} node={node} />
-        </div>
-        {renameOpen && (
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle>Rename device</CardTitle>
-              <CardDescription>Device names must be unique within this site.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form className="flex flex-wrap items-end gap-3" onSubmit={rename}>
-                <div className="min-w-48 flex-1 space-y-2">
-                  <label htmlFor="rename-device">Device name</label>
-                  <Input
-                    id="rename-device"
-                    value={name}
-                    maxLength={100}
-                    required
-                    disabled={pending}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </div>
-                <Button type="submit" disabled={pending || !name.trim()}>
-                  {pending ? 'Saving…' : 'Save name'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={pending}
-                  onClick={() => setRenameOpen(false)}
-                >
-                  <X aria-hidden="true" />
-                  Cancel
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
-      </section>
-      <section
-        id={panelId(1)}
-        role="tabpanel"
-        aria-labelledby={tabId(1)}
-        hidden={activeTab !== 1}
-        className="space-y-6"
+      )}
+
+      <div
+        className="mb-4 border-b"
+        role="tablist"
+        aria-label="Device details"
+        onKeyDown={handleTabKeyDown}
       >
+        <div className="flex flex-wrap gap-1">
+          {tabs.map((tab, index) => (
+            <button
+              key={tab}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              id={tabId(index)}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === index}
+              aria-controls={panelId(index)}
+              tabIndex={activeTab === index ? 0 : -1}
+              className={`border-b-2 px-4 py-3 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeTab === index ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+              onClick={() => setActiveTab(index)}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="text-sm leading-6 text-muted-foreground">{tips[activeTab]}</p>
+      <section id={panelId(0)} role="tabpanel" aria-labelledby={tabId(0)} hidden={activeTab !== 0}>
+        <div className="mb-5 space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border bg-background p-4">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Activity size={15} aria-hidden="true" />
+                Controller connection
+              </div>
+              <div className="mt-3">
+                <Badge className={statusTone}>
+                  <span
+                    className={`size-1.5 rounded-full ${node.connectionStatus === 'management-connected' ? 'bg-emerald-600' : node.connectionStatus === 'revoked' ? 'bg-rose-600' : 'bg-current'}`}
+                  />
+                  {connectionStatusLabels[node.connectionStatus]}
+                </Badge>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                Configuration revision {node.configRevision ?? '—'}:{' '}
+                {node.configStatus === 'received'
+                  ? 'received (staged only)'
+                  : (node.configStatus ?? 'not-configured')}
+                . Receipt does not confirm tunnel apply or reachability; check Overlay.
+              </p>
+            </div>
+            <div className="rounded-lg border bg-background p-4">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Clock3 size={15} aria-hidden="true" />
+                Last check-in
+              </div>
+              <p className="mt-3 text-sm font-medium">{lastSeen || 'No check-in received'}</p>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                {lastSeen
+                  ? 'Most recent management heartbeat received by the controller.'
+                  : 'Enroll the device and start its agent to receive heartbeats.'}
+              </p>
+            </div>
+          </div>
+          <details className="group rounded-lg border bg-muted/20">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2">
+                <ShieldCheck size={16} className="text-muted-foreground" aria-hidden="true" />
+                Device identity
+              </span>
+              <span className="text-xs font-normal text-muted-foreground group-open:hidden">
+                Show ID
+              </span>
+              <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
+                Hide ID
+              </span>
+            </summary>
+            <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <code className="break-all text-xs text-muted-foreground">{node.id}</code>
+              <Button type="button" variant="outline" size="sm" onClick={copyDeviceId}>
+                <Copy aria-hidden="true" />
+                Copy ID
+              </Button>
+            </div>
+          </details>
+        </div>
+        <AgentTelemetry node={node} telemetry={telemetry} />
+        <div className="mt-5">
+          <DeviceConnectionStatus nodeId={node.id} />
+        </div>
+      </section>
+      <section id={panelId(1)} role="tabpanel" aria-labelledby={tabId(1)} hidden={activeTab !== 1}>
+        <UnderlayInterfaces key={`underlay-${node.id}`} node={node} role={role} telemetry={telemetry} />
+      </section>
+      <section id={panelId(2)} role="tabpanel" aria-labelledby={tabId(2)} hidden={activeTab !== 2}>
         <WireguardConnections key={`wireguard-${node.id}`} node={node} role={role} />
+      </section>
+      <section id={panelId(3)} role="tabpanel" aria-labelledby={tabId(3)} hidden={activeTab !== 3}>
         <LanSettings key={`lan-${node.id}`} node={node} role={role} />
       </section>
       <section
-        id={panelId(2)}
+        id={panelId(4)}
         role="tabpanel"
-        aria-labelledby={tabId(2)}
-        hidden={activeTab !== 2}
-        className="space-y-6"
+        aria-labelledby={tabId(4)}
+        hidden={activeTab !== 4}
+        className="space-y-5"
       >
-        <NetworkConfigurationPreview key={`network-${node.id}`} node={node} role={role} />
         <AgentConfiguration key={`config-${node.id}`} inventory={inventory} role={role} />
+        <details className="rounded-xl border bg-card">
+          <summary className="cursor-pointer px-5 py-4 text-sm font-medium">
+            Network configuration preview
+          </summary>
+          <div className="border-t p-3 sm:p-5">
+            <NetworkConfigurationPreview key={`network-${node.id}`} node={node} role={role} />
+          </div>
+        </details>
+        {role === 'superadmin' && (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Superadmin tools · Expand a section to inspect configuration sources, review commands,
+              or prepare a local agent upgrade.
+            </p>
+            <details className="rounded-xl border bg-card">
+              <summary className="cursor-pointer px-5 py-4 text-sm font-medium">
+                Configuration sources
+              </summary>
+              <div className="border-t p-3 sm:p-5">
+                <DeviceConfigurationSources
+                  key={`device-state-${node.id}`}
+                  nodeId={node.id}
+                  deviceOnline={node.connectionStatus === 'management-connected'}
+                />
+              </div>
+            </details>
+            <details className="rounded-xl border bg-card">
+              <summary className="cursor-pointer px-5 py-4 text-sm font-medium">
+                Command history
+              </summary>
+              <div className="border-t p-3 sm:p-5">
+                <DeviceCommandHistory key={`command-history-${node.id}`} nodeId={node.id} />
+              </div>
+            </details>
+            <details className="rounded-xl border bg-card">
+              <summary className="cursor-pointer px-5 py-4 text-sm font-medium">
+                Agent upgrade
+              </summary>
+              <div className="border-t p-3 sm:p-5">
+                <AgentUpgrade releases={agentReleases} />
+              </div>
+            </details>
+          </>
+        )}
       </section>
-      {role === 'superadmin' && (
-        <section id={panelId(3)} role="tabpanel" aria-labelledby={tabId(3)} hidden={activeTab !== 3}>
-          <AgentUpgrade releases={agentReleases} />
-        </section>
-      )}
-      {role === 'superadmin' && (
-        <section id={panelId(5)} role="tabpanel" aria-labelledby={tabId(5)} hidden={activeTab !== 5}>
-          <DeviceConfigurationSources
-            key={`device-state-${node.id}`}
-            nodeId={node.id}
-            deviceOnline={node.connectionStatus === 'management-connected'}
-          />
-        </section>
-      )}
-      {role === 'superadmin' && (
-        <section id={panelId(4)} role="tabpanel" aria-labelledby={tabId(4)} hidden={activeTab !== 4}>
-          <DeviceCommandHistory key={`command-history-${node.id}`} nodeId={node.id} />
-        </section>
-      )}
       <Modal
         open={archiveOpen}
         onOpenChange={setArchiveOpen}
@@ -404,13 +459,14 @@ export function DeviceDetails({ node, role, agentReleases }: { node: NodeRecord;
           <Button
             type="button"
             variant="ghost"
+            size="md"
             disabled={pending}
             onClick={() => setArchiveOpen(false)}
           >
             Cancel
           </Button>
-          <Button type="button" disabled={pending} onClick={archive}>
-            {pending ? 'Archiving…' : 'Archive device'}
+          <Button type="button" variant="destructive" size="md" loading={pending} onClick={archive}>
+            Archive device
           </Button>
         </ModalFooter>
       </Modal>

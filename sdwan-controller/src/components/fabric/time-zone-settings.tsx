@@ -52,12 +52,12 @@ export function TimeZoneSettings() {
       <form onSubmit={save} className="max-w-xl space-y-4">
         <div className="space-y-2">
           <label htmlFor="controller-time-zone" className="text-sm font-medium">IANA time zone</label>
-          <Input id="controller-time-zone" value={timeZone} onChange={(event) => setValue(event.target.value)} placeholder="America/Los_Angeles" required maxLength={64} disabled={version === null || busy} />
+          <Input controlSize="md" id="controller-time-zone" value={timeZone} onChange={(event) => setValue(event.target.value)} placeholder="America/Los_Angeles" required maxLength={64} disabled={version === null || busy} />
           <p className="text-xs leading-5 text-muted-foreground">Examples: UTC, America/Los_Angeles, Europe/London, Asia/Jakarta. Changes apply to all operators and do not change stored timestamps.</p>
         </div>
         {error && <Feedback tone="error">{error}</Feedback>}
         {notice && <Feedback tone="success">{notice}</Feedback>}
-        <Button type="submit" disabled={version === null || busy || !timeZone.trim()}>{busy ? 'Saving…' : 'Save time zone'}</Button>
+        <Button size="md" type="submit" disabled={version === null || busy || !timeZone.trim()}>{busy ? 'Saving…' : 'Save time zone'}</Button>
       </form>
     </CardContent>
   </Card>;

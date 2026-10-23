@@ -8,3 +8,7 @@ Create `0001-short-title.md` for consequential architecture decisions, including
 - [ADR 0004 — Selected WireGuard hub adjacencies](0004-wireguard-adjacencies.md) — source implementation with namespace evidence; Debian deployment gate pending.
 
 - [ADR 0005 — Routed LAN bundle ownership](0005-routed-lan-ownership.md) — approved implementation scope; milestone evidence recorded separately.
+
+- [ADR 0006 — WireGuard draft and explicit publication](0006-wireguard-draft-publication.md) — controller-only candidates, atomic promotion and separate operational evidence.
+
+- [0007: Interface safe commit supervisor](0007-interface-safe-commit.md) — locally authorized dedicated static LAN/VLAN transactions and independent rollback.

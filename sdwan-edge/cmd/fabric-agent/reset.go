@@ -30,6 +30,7 @@ func resetNetwork(ctx context.Context, writer io.Writer, directory, managementDi
 	if !strings.EqualFold(old.NodeID, expected) {
 		return errors.New("old identity does not match reset confirmation")
 	}
+	if err=interfaceGuardResetSafe(interfacePolicyPath,interfaceGuardDirectory);err!=nil{return err}
 	next, err := identity.Load(managementDirectory)
 	if err != nil || !validNodeID(next.NodeID) || strings.EqualFold(old.NodeID, next.NodeID) {
 		return errors.New("a different enrolled management identity is required")
@@ -57,4 +58,11 @@ func resetNetwork(ctx context.Context, writer io.Writer, directory, managementDi
 	}
 	_, err = fmt.Fprintln(writer, "Old owned network configuration removed; identity files remain preserved for installer backup.")
 	return err
+}
+
+func interfaceGuardResetSafe(policyPath,directory string)error{
+ for _,path:=range []string{policyPath,filepath.Join(directory,"pending.json"),filepath.Join(directory,"confirmed.json")}{
+  if _,err:=os.Lstat(path);err==nil{return errors.New("clear and retire interface guard ownership locally before resetting identity; preserve recovery journals")}else if !os.IsNotExist(err){return errors.New("interface guard ownership could not be checked; reset refused")}
+ }
+ return nil
 }

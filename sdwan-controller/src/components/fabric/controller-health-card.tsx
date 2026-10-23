@@ -2,7 +2,7 @@
 
 import { LoaderCircle, Network, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function ControllerHealthCard({
@@ -25,15 +25,15 @@ export function ControllerHealthCard({
           <CardTitle>Controller health</CardTitle>
           <CardDescription className="mt-1">Application availability.</CardDescription>
         </div>
-        <Button
-          size="icon"
+        <IconButton
+          size="sm"
           variant="ghost"
           disabled={checking}
           onClick={onRefresh}
           aria-label="Refresh controller health"
         >
           {checking ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
-        </Button>
+        </IconButton>
       </CardHeader>
       <CardContent>
         <div className="flex items-center justify-between rounded-lg border p-4">

@@ -40,7 +40,7 @@ export function RoutingSettings() {
       <Textarea id="protected-prefixes" value={prefixes} onChange={(event) => setPrefixes(event.target.value)} placeholder="192.168.160.0/24" required disabled={version === null || busy} rows={3} />
       <p className="text-xs leading-5 text-muted-foreground">One canonical IPv4 network per line. Include all management and underlay networks. This reservation prevents new overlaps; it does not change host routes or firewall rules.</p>
       {error && <Feedback tone="error">{error}</Feedback>}{notice && <Feedback tone="success">{notice}</Feedback>}
-      <Button type="submit" disabled={version === null || busy}>{busy ? 'Saving…' : 'Save protected networks'}</Button>
+      <Button size="md" type="submit" disabled={version === null || busy}>{busy ? 'Saving…' : 'Save protected networks'}</Button>
     </form></CardContent>
   </Card>;
 }

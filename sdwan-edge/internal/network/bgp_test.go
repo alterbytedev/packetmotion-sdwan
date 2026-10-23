@@ -2,6 +2,8 @@ package network
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +20,98 @@ func testRoutedPlan(t *testing.T) Plan {
 		BGP: &BGP{LocalASN: 65001, RouterID: "10.61.0.1", Peers: []BGPPeer{{InterfaceName: tunnel.Name, Address: tunnel.PeerAddress, RemoteASN: 65000, ImportPrefixes: []string{"10.62.0.0/24"}, ExportPrefixes: []string{"10.61.0.0/24"}, LocalPreference: 200}}},
 	}}
 }
+
+func testTwoPeerRoutedPlan(t *testing.T) Plan {
+	t.Helper()
+	data, err := os.ReadFile("testdata/frr/bgp-two-peers-plan.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan Plan
+	if err := json.Unmarshal(data, &plan); err != nil {
+		t.Fatal(err)
+	}
+	return plan
+}
+
+func TestBGPRendererMatchesReviewFixtureAndIsDeterministic(t *testing.T) {
+	plan := testTwoPeerRoutedPlan(t)
+	if err := Validate(plan); err != nil {
+		t.Fatalf("fixture plan is invalid: %v", err)
+	}
+	engine := Engine{NodeID: "fixture-node"}
+	got := engine.renderBGP(plan)
+	want, err := os.ReadFile("testdata/frr/bgp-two-peers.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != string(want) {
+		t.Fatalf("rendered FRR config differs from review fixture:\n%s", got)
+	}
+
+	reversed := plan
+	reversed.Tunnels = append([]Tunnel(nil), plan.Tunnels...)
+	reversed.Routing = &Routing{LAN: plan.Routing.LAN, ProtectedPrefixes: append([]string(nil), plan.Routing.ProtectedPrefixes...), BGP: &BGP{
+		LocalASN: plan.Routing.BGP.LocalASN, RouterID: plan.Routing.BGP.RouterID,
+		Peers: append([]BGPPeer(nil), plan.Routing.BGP.Peers...),
+	}}
+	for left, right := 0, len(reversed.Tunnels)-1; left < right; left, right = left+1, right-1 {
+		reversed.Tunnels[left], reversed.Tunnels[right] = reversed.Tunnels[right], reversed.Tunnels[left]
+	}
+	for left, right := 0, len(reversed.Routing.BGP.Peers)-1; left < right; left, right = left+1, right-1 {
+		reversed.Routing.BGP.Peers[left], reversed.Routing.BGP.Peers[right] = reversed.Routing.BGP.Peers[right], reversed.Routing.BGP.Peers[left]
+	}
+	if other := engine.renderBGP(reversed); other != got {
+		t.Fatal("rendered output changed when peer/tunnel input order changed")
+	}
+}
+
+func TestOversizedBGPPlanIsRejectedBeforeAnyCommand(t *testing.T) {
+	plan := testRoutedPlan(t)
+	peer := plan.Routing.BGP.Peers[0]
+	plan.Routing.BGP.Peers = make([]BGPPeer, 129)
+	for i := range plan.Routing.BGP.Peers {
+		plan.Routing.BGP.Peers[i] = peer
+	}
+	calls := 0
+	engine := Engine{Run: func(context.Context, string, []string, string) ([]byte, error) {
+		calls++
+		return nil, errors.New("unexpected command")
+	}}
+	if err := engine.preflight(context.Background(), plan); err == nil {
+		t.Fatal("oversized BGP plan was accepted")
+	}
+	if calls != 0 {
+		t.Fatalf("oversized plan invoked %d system commands before rejection", calls)
+	}
+}
+
+func TestBGPRendererDoesNotMutateTypedPeerInput(t *testing.T) {
+	plan := testTwoPeerRoutedPlan(t)
+	firstName, secondName := plan.Routing.BGP.Peers[0].InterfaceName, plan.Routing.BGP.Peers[1].InterfaceName
+	Engine{NodeID: "fixture-node"}.renderBGP(plan)
+	if plan.Routing.BGP.Peers[0].InterfaceName != firstName || plan.Routing.BGP.Peers[1].InterfaceName != secondName {
+		t.Fatal("renderer mutated desired BGP peer order")
+	}
+}
+
+func TestBGPRemovalRendererProducesReviewableFRRCommands(t *testing.T) {
+	got := renderBGPRemoval(bgpFRRRemovalData{
+		RouterASN: 65001,
+		Objects: []bgpFRRRemovalObject{
+			{PrefixList: "PM1955453032_pm111111111111_IN"},
+			{RouteMap: "PM1955453032_pm111111111111_IN"},
+		},
+	})
+	want := "no router bgp 65001\nno ip prefix-list PM1955453032_pm111111111111_IN\nno route-map PM1955453032_pm111111111111_IN\n"
+	if got != want {
+		t.Fatalf("rendered removal commands differ from expected:\n%s", got)
+	}
+	if empty := renderBGPRemoval(bgpFRRRemovalData{}); empty != "" {
+		t.Fatalf("empty cleanup rendered commands: %q", empty)
+	}
+}
+
 func TestBGPValidationBindsWireguardAndRouteOwnership(t *testing.T) {
 	good := testRoutedPlan(t)
 	if err := Validate(good); err != nil {

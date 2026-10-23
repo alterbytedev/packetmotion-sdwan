@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 set +x
-VERSION='0.3.3'
+VERSION='0.4.0'
 PUBLIC_KEY='-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAfhP9C+VjuVmj0Bq77IBhT2kZ6gBwrHUpWgYv2g8ESTM=
 -----END PUBLIC KEY-----'
@@ -118,8 +118,15 @@ rollback_identity_reset() {
   fi
   printf 'Prior credentials may already be revoked. File restoration is not proof of controller or network recovery.\n' >&2
 }
+interface_guard_reset_preflight() {
+  [[ ! -e /etc/packetmotion/interface-policy.json && ! -L /etc/packetmotion/interface-policy.json && ! -e /var/lib/packetmotion-interfaces/confirmed.json && ! -e /var/lib/packetmotion-interfaces/pending.json ]] || fail 'interface guard ownership must be cleared and retired locally before replacing the device identity; preserve recovery journals'
+  if systemctl is-active --quiet fabric-interface-guard.service; then
+    fail 'stop and retire the interface guard after clearing applied settings before replacing the device identity'
+  fi
+}
 replace_enrolled_identity() {
   progress reset-preflight
+  interface_guard_reset_preflight
   "$WORK/$ASSET" reset-network --help >/dev/null 2>&1 || fail 'selected signed release lacks reset-network; select a reset-capable release'
   validate_reset_service
   progress reset-confirmation
