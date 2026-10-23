@@ -57,7 +57,12 @@ private-state/
 *.db
 *.tmp
 
-# Reviewed evidence may be committed; Playwright artifacts stay in ignored test-results/.
+# Screenshots and image captures stay local; use text evidence in Git.
+/docs/evidence/**/*.png
+/docs/evidence/**/*.jpg
+/docs/evidence/**/*.jpeg
+/docs/evidence/**/*.webp
+/docs/evidence/**/*.gif
 
 # Generated Next.js type entrypoint
 /sdwan-controller/next-env.d.ts

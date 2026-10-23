@@ -1733,3 +1733,13 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: No product UI, API, database, appliance or network behavior changed; only test artifact destinations changed.
 - Risks/rollback: Browser tests no longer refresh evidence files automatically; explicitly copy reviewed screenshots from `sdwan-controller/test-results/` when evidence is needed. Revert the screenshot path and evidence guidance edits to restore the old behavior.
 - Next: Review any desired browser captures and promote only those that serve as durable evidence.
+
+## EVIDENCE-IMAGES-EXCLUDED-001 — 2026-10-23 — Codex
+
+- Status: COMPLETE.
+- Summary: Removed 29 newly staged evidence screenshots (about 4.9 MiB) from the Git index while leaving local copies intact. Added ignore rules for image files under `docs/evidence/`; existing historical tracked images were not rewritten. Updated evidence documentation to record verification in text and keep new screenshots local.
+- Files: `.gitignore`; `docs/evidence/README.md`; `docs/evidence/interface-apply/README.md`; this log. Screenshot additions were removed from the index only.
+- Checks: `git check-ignore` for local evidence screenshots and browser `test-results/` outputs; `git diff --check`; inspected the final staged diff to confirm those 29 PNGs are absent. No application tests run; this change only controls repository artifacts and documentation.
+- UI/network impact: None. Test screenshot outputs remain local; reviewed legacy images already in Git are unchanged.
+- Risks/rollback: New evidence screenshots cannot be added with ordinary `git add`; keep visual evidence locally or use `git add -f` only for an explicitly approved exception. Revert the scoped ignore rules and re-add files if the repository policy changes. No application or network rollback is needed.
+- Next: Keep future test screenshots outside Git and rely on concise textual evidence in committed docs/logs.
