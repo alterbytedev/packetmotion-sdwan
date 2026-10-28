@@ -70,3 +70,6 @@ private-state/
 # Change log append coordination files
 /docs/change-logs/.append.lock
 /docs/change-logs/.index.tmp
+
+# Local AI navigation snapshot (regenerate with: npx repomix)
+.claude/codebase-structure.xml

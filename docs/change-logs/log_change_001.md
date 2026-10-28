@@ -1753,3 +1753,30 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: None.
 - Risks/rollback: A too-broad ignore pattern could hide useful files; the instruction requires narrow rules and `git check-ignore` verification. Rollback by removing the added guidance bullet.
 - Next: Apply this check during future feature work.
+## AI-TOKEN-TOOLING-001 — 2026-10-27 — Claude Code
+
+- Status: PARTIAL (Phase 2 of token-usage setup).
+- Summary: Added `repomix.config.json` producing a compressed, signatures-only XML navigation snapshot at `.claude/codebase-structure.xml` (203 files, 34,811 tokens). Excludes docs, Markdown, tests/fixtures, release binaries/public assets, lockfiles, `api/openapi.yaml`, shell scripts, migrations and `.github/`; read those on demand. Ignored the snapshot in Git. rtk installation was blocked by the session permission classifier and is pending operator approval.
+- Files: `repomix.config.json`; `.gitignore`; this log.
+- Checks: `npx -y repomix` PASS (security check clean); `git check-ignore -v .claude/codebase-structure.xml` matches `.gitignore`. No application tests run; tooling/config only.
+- UI/network impact: None.
+- Risks/rollback: Snapshot can go stale; regenerate with `npx repomix`. Rollback by deleting `repomix.config.json`, the `.gitignore` rule and `.claude/codebase-structure.xml`.
+- Next: Install rtk with operator approval; register MCP servers (user scope, no committed secrets); add `CLAUDE.md`.
+## AI-TOKEN-TOOLING-002 — 2026-10-27 — Claude Code
+
+- Status: PARTIAL (Phases 3–4 of token-usage setup).
+- Summary: Added root `CLAUDE.md` that imports `AGENTS.md` (single source of truth) and adds Claude-specific scoped-rule, command (rtk), navigation (search first, ranged reads, repomix snapshot on demand) and terse output policies. Registered repomix MCP at user scope (`~/.claude.json`, not committed). claude-context MCP not registered: embedding key and Milvus/Zilliz credentials not yet supplied. rtk still not installed (blocked by permission classifier). No files archived.
+- Files: `CLAUDE.md`; this log.
+- Checks: `claude mcp list` shows repomix connected. Documentation/config only; no application tests run.
+- UI/network impact: None.
+- Risks/rollback: rtk policy is conditional until rtk is installed. Rollback by deleting `CLAUDE.md` and `claude mcp remove --scope user repomix`.
+- Next: Install rtk and run `rtk init`; register claude-context with user-scope env credentials and index.
+## AI-TOKEN-TOOLING-003 — 2026-10-27 — Claude Code
+
+- Status: PARTIAL (rtk installed; claude-context pending credentials).
+- Summary: Installed rtk 1.1.0 (Rust Token Killer, rtk-ai/rtk release, checksum-verified) to `~/.local/bin`. Ran `rtk init -g --hook-only --auto-patch --no-trust-filters`, adding a user-level Claude Code PreToolUse Bash hook (`rtk hook claude`) in `~/.claude/settings.json` (backup `settings.json.bak`). No repository files changed except this log.
+- Files: this log (user-level config outside the repo as noted).
+- Checks: `rtk --version` = 1.1.0; `rtk init --show` reports hook and settings OK; hook rewrites `git status` to `rtk git status`; `rtk git status` output correct.
+- UI/network impact: None.
+- Risks/rollback: Hook applies to all Claude Code projects for this user. Rollback with `rtk init -g --uninstall` or restore `~/.claude/settings.json.bak`; remove `~/.local/bin/rtk`.
+- Next: Restart Claude Code; register claude-context with user-scope credentials and index.

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://repomix.com/schemas/latest/schema.json",
+  "output": {
+    "filePath": ".claude/codebase-structure.xml",
+    "style": "xml",
+    "compress": true,
+    "removeComments": true,
+    "removeEmptyLines": true,
+    "fileSummary": false,
+    "directoryStructure": true
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "**/package-lock.json",
+      "**/go.sum",
+      "**/*.lock",
+      "**/node_modules/**",
+      "**/vendor/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.next/**",
+      ".next-*/**",
+      "**/*.min.*",
+      "**/*.map",
+      "sdwan-controller/public/**",
+      "sdwan-edge/release/**",
+      "**/*.pem",
+      "**/*.png",
+      "**/*.svg",
+      "**/*.ico",
+      "**/*.tar.gz",
+      "**/fabric-agent-linux-*",
+      "docs/**",
+      "sdwan-controller/docs/**",
+      "**/*.md",
+      "**/*.txt",
+      "**/tests/**",
+      "tests/**",
+      "**/*.test.*",
+      "**/*_test.go",
+      "**/testdata/**",
+      "**/__fixtures__/**",
+      "**/fixtures/**",
+      "api/openapi.yaml",
+      "**/*.sh",
+      "**/migrations/**",
+      ".github/**"
+    ]
+  }
+}
