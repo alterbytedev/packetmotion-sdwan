@@ -18,6 +18,9 @@ const allowedDevOrigins = [...new Set([...configuredDevOrigins, ...interfaceDevO
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: {
+    agentUpgrade: 'security',
+  },
   // These are browser hostnames, not the server's 0.0.0.0 bind address.
   allowedDevOrigins,
   ...(process.env.FABRIC_TEST_ISOLATED === '1' ? { devIndicators: false as const } : {}),

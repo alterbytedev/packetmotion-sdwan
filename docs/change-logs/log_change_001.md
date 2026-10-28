@@ -1753,3 +1753,7 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: None.
 - Risks/rollback: A too-broad ignore pattern could hide useful files; the instruction requires narrow rules and `git check-ignore` verification. Rollback by removing the added guidance bullet.
 - Next: Apply this check during future feature work.
+## Next.js 16.4.0 -> 16.4.3 security upgrade
+- Scope: sdwan-controller dependency bump (exact pin) for a published security advisory; added `experimental.agentUpgrade: 'security'` in next.config.ts.
+- Checks: typecheck pass, lint pass, `npm test` 68/71 (same 3 DB/uuid/enrollment failures as 16.4.0 baseline), `NODE_ENV=production npm run build` pass. Integration/browser/visual suites not run (UNVERIFIED).
+- Risks: none known; patch release. Rollback: revert the commit.
