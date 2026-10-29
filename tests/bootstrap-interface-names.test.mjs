@@ -93,3 +93,7 @@ test('DHCP service starts only after every dhcpcd manager for the uplink has sto
   assert.ok(at('stop_uplink_dhcp_clients "$NETWORK_IFACE"') < at('run \'Start uplink DHCP client\''));
   assert.match(script, /pgrep -f "\^dhcpcd: \$iface "/);
 });
+
+test('uplink DHCP stop tolerates pgrep finding nothing', () => {
+  assert.match(script, /mapfile -t pids < <\(pgrep -f "\^dhcpcd: \$iface " \|\| true\)/);
+});

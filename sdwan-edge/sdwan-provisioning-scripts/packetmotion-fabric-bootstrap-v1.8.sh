@@ -215,12 +215,13 @@ clear_frr_uplink_static() {
   local iface=$1 entry kind value
   local -a lines args
   command -v vtysh >/dev/null && systemctl is-active --quiet frr || return 0
+  # A failing vtysh just means there is nothing to remove.
   mapfile -t lines < <(vtysh -c 'show running-config' 2>/dev/null | awk -v dev="$iface" '
     /^interface / { cur = $2; next }
     /^[^ ]/ { cur = "" }
     cur == dev && /^ ip address / { print "addr\t" $3 }
     /^ip route / && $NF == dev { print "route\t" $0 }
-  ')
+  ' || true)
   (( ${#lines[@]} > 0 )) || return 0
   printf '  FRR holds static settings on %s from an earlier run; removing them so DHCP can assign the address:\n' "$iface" >&3
   args=(-c 'configure terminal')
@@ -274,7 +275,9 @@ stop_uplink_dhcp_clients() {
   local -a pids
   dhcpcd -4 -x "$iface" >/dev/null 2>&1 || true
   for i in {1..20}; do
-    mapfile -t pids < <(pgrep -f "^dhcpcd: $iface ")
+    # pgrep exits 1 when nothing matches; that is the success case here, and without
+    # `|| true` mapfile would keep one empty entry and wait for a process that is gone.
+    mapfile -t pids < <(pgrep -f "^dhcpcd: $iface " || true)
     (( ${#pids[@]} == 0 )) && return 0
     for pid in "${pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
     sleep 0.5

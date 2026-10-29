@@ -1852,3 +1852,12 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: the install briefly stops the uplink's DHCP manager, so SSH over that interface may drop; the service then re-acquires the lease. Installs with a surviving manager stop with an error instead of starting a service that cannot own the lease.
 - Risks/rollback: SIGTERM to a DHCP manager releases its address if it runs without `-p`; the service re-requests it. Rollback: `git revert` the change, or `systemctl stop packetmotion-dhcp` and restart the old manager manually.
 - Next: On the lab VM, verify `pgrep -a dhcpcd` shows exactly one `dhcpcd: <iface>` process owned by the service after install, and that a reboot keeps the lease.
+## BOOTSTRAP-V1.8-DHCP-STOP-001 — 2026-10-28 — Claude Code
+
+- Status: COMPLETE (script/test only).
+- Summary: A lab run finished with PASS 37 / WARN 0 / FAIL 0 and an active DHCP service, but the log printed `INSTALLATION STOPPED at line 277` followed by `DONE` for "Stop bootstrap DHCP client". `pgrep` exits 1 when no dhcpcd process matches, and that status leaked into the process substitution feeding `mapfile`. Fix: `pgrep ... || true` in `stop_uplink_dhcp_clients`, and `|| true` on the `vtysh` pipeline in `clear_frr_uplink_static`.
+- Files: `sdwan-edge/sdwan-provisioning-scripts/packetmotion-fabric-bootstrap-v1.8.sh`; `tests/bootstrap-interface-names.test.mjs`; this log.
+- Checks: `bash -n` PASS; `node --test tests/bootstrap-interface-names.test.mjs` PASS (14/14). Real `pgrep` with an interface that has no process, run through the `run` pipeline: returns 0 and prints no error. UNVERIFIED: the spurious message on the lab host beyond the pasted log.
+- UI/network impact: none; only the installer's status output changes.
+- Risks/rollback: `git revert` the change.
+- Next: rerun the installer on the lab VM and confirm no `INSTALLATION STOPPED` line appears during the DHCP stop.
