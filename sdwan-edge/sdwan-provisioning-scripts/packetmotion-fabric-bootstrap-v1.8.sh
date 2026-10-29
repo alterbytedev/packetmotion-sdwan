@@ -2,6 +2,10 @@
 
 set -Eeuo pipefail
 
+# `su` without `-` keeps the caller's PATH, which lacks /usr/sbin (sysctl,
+# dhcpcd, ip, nft ...). Set it explicitly instead of relying on the login shell.
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 # PacketMotion Fabric v1.8 — Debian 12/13 interactive bootstrap
 
 # Root password SSH is unsafe on Internet-facing systems.
@@ -27,19 +31,23 @@ if [[ -t 3 && -z ${NO_COLOR:-} ]]; then
 
 else G=''; Y=''; R=''; C=''; B=''; N=''; fi
 
-PASS=0; WARN=0; FAIL=0; STEP=0
+PASS=0; WARN=0; FAIL=0; STEP=0; TOTAL_STEPS=12
 
 line(){ printf '%s\n' '┌──────────────────────────────────────────────────────────────────────────┐' >&3; }
 
 heading(){ printf '\n%b╔══════════════════════════════════════════════════════════════════════════╗%b\n' "$C" "$N" >&3; printf '║ %-72s ║\n' "$1" >&3; printf '╚══════════════════════════════════════════════════════════════════════════╝\n' >&3; }
 
-step(){ STEP=$((STEP+1)); printf '\n%b[%d/13] %s%b\n' "$B" "$STEP" "$1" "$N" >&3; }
+step(){ STEP=$((STEP+1)); printf '\n%b[%d/%d] %s%b\n' "$B" "$STEP" "$TOTAL_STEPS" "$1" "$N" >&3; }
 
 status(){ local kind=$1 name=$2 detail=$3 color=$G; case "$kind" in WARN) color=$Y; WARN=$((WARN+1));; FAIL) color=$R; FAIL=$((FAIL+1));; PASS) PASS=$((PASS+1));; esac; printf '│ %-25.25s │ %b%-5s%b │ %-32.32s │\n' "$name" "$color" "$kind" "$N" "$detail" >&3; }
 
 table_start(){ printf '┌───────────────────────────┬───────┬──────────────────────────────────┐\n' >&3; printf '│ %-25s │ %-5s │ %-32s │\n' 'CHECK' 'STATE' 'DETAIL' >&3; printf '├───────────────────────────┼───────┼──────────────────────────────────┤\n' >&3; }
 
 table_end(){ printf '└───────────────────────────┴───────┴──────────────────────────────────┘\n' >&3; }
+
+# Keep the first backup of a file: several edits in one run share a timestamp,
+# so -n stops a later copy from replacing the original with a modified version.
+backup_file(){ [[ ! -f $1 ]] || cp -an "$1" "$1.bak.$(date +%Y%m%d%H%M%S)"; }
 
 # Stream command output to terminal AND installation log in real time.
 
@@ -99,7 +107,8 @@ NETWORK_MODE=keep
 NETWORK_IFACE=
 NETWORK_ADDRESS=
 NETWORK_GATEWAY=
-DHCP_BOOTSTRAP_STARTED=0
+DHCP_CLIENT=
+DHCP_DNS=
 HOSTNAME_VALUE=$(hostname -s)
 DOMAIN_VALUE=$(hostname -d 2>/dev/null || true)
 FRR_HOSTNAME_VALUE=$HOSTNAME_VALUE
@@ -143,12 +152,166 @@ network_prompt() {
 }
 
 confirm_choice() {
-  local label=$1
+  local label=$1 default=${2:-2}
   while :; do
-    network_prompt "$label (1=Yes, 2=Cancel)" 2
+    network_prompt "$label (1=Yes, 2=Cancel)" "$default"
     case "$REPLY" in 1) return 0;; 2) return 1;; esac
     printf '  Choose 1 or 2.\n' >&3
   done
+}
+
+# Accepts one or more IPv4 servers separated by spaces or commas; REPLY is the
+# normalized space-separated list. Enter alone selects Google Public DNS.
+prompt_dns() {
+  local entry normalized
+  local -a entries
+  while :; do
+    network_prompt 'DNS servers, up to 3 (e.g. 1.1.1.1 or 8.8.8.8 8.8.4.4)' '8.8.8.8 8.8.4.4'
+    entries=(${REPLY//,/ })
+    normalized=
+    for entry in "${entries[@]}"; do
+      valid_ipv4 "$entry" || { normalized=; break; }
+      normalized+="${normalized:+ }$entry"
+    done
+    if [[ -n "$normalized" ]] && (( ${#entries[@]} <= 3 )); then REPLY=$normalized; return 0; fi
+    printf '  Enter 1 to 3 valid IPv4 DNS servers.\n' >&3
+  done
+}
+
+dns_resolves() { getent hosts deb.debian.org >/dev/null 2>&1; }
+
+# Immediate resolver change only. DHCP persistence is written to dhcpcd.conf later;
+# the static helper script writes its own resolver settings.
+apply_dns_now() {
+  local iface=$1 dns=$2
+  if command -v resolvectl >/dev/null && systemctl is-active --quiet systemd-resolved; then
+    resolvectl dns "$iface" $dns && resolvectl domain "$iface" '~.'
+  elif [[ -L /etc/resolv.conf ]]; then
+    printf '  Resolver is managed externally; set the name server in its manager.\n' >&3
+    return 1
+  else
+    backup_file /etc/resolv.conf
+    printf 'nameserver %s\n' $dns > /etc/resolv.conf
+  fi
+}
+
+# Resolver lines shared by the static helper and the DNS-only unit. They set DNS
+# and the routing domain only; addresses and routes stay with FRR or DHCP.
+print_resolver_commands() {
+  local iface=$1 dns=$2
+  if command -v resolvectl >/dev/null && systemctl is-active --quiet systemd-resolved; then
+    # $dns holds validated IPv4 addresses only, so word splitting is intended.
+    printf 'resolvectl dns %q %s\nresolvectl domain %q %q\n' "$iface" "$dns" "$iface" '~.'
+  else
+    printf '[[ ! -L /etc/resolv.conf ]] || { echo "Resolver management changed; configure DNS manually" >&2; exit 1; }\n'
+    printf 'printf "nameserver %%s\\n" %s > /etc/resolv.conf\n' "$dns"
+  fi
+}
+
+# FRR owns static uplink addresses and routes saved by an earlier static run, and
+# restores them on every FRR restart. Remove this interface's entries and save the
+# configuration first, so DHCP is the only address source for it.
+clear_frr_uplink_static() {
+  local iface=$1 entry kind value
+  local -a lines args
+  command -v vtysh >/dev/null && systemctl is-active --quiet frr || return 0
+  # A failing vtysh just means there is nothing to remove.
+  mapfile -t lines < <(vtysh -c 'show running-config' 2>/dev/null | awk -v dev="$iface" '
+    /^interface / { cur = $2; next }
+    /^[^ ]/ { cur = "" }
+    cur == dev && /^ ip address / { print "addr\t" $3 }
+    /^ip route / && $NF == dev { print "route\t" $0 }
+  ' || true)
+  (( ${#lines[@]} > 0 )) || return 0
+  printf '  FRR holds static settings on %s from an earlier run; removing them so DHCP can assign the address:\n' "$iface" >&3
+  args=(-c 'configure terminal')
+  for entry in "${lines[@]}"; do
+    kind=${entry%%$'\t'*}
+    value=${entry#*$'\t'}
+    printf '    %s\n' "$value" >&3
+    if [[ "$kind" == addr ]]; then
+      args+=(-c "interface $iface" -c "no ip address $value" -c 'exit')
+    else
+      args+=(-c "no $value")
+    fi
+  done
+  args+=(-c 'end' -c 'write memory')
+  run 'Remove static FRR uplink settings for DHCP' vtysh "${args[@]}"
+}
+
+stop_dhcp_client() {
+  local iface=$1
+  ! command -v dhcpcd >/dev/null || dhcpcd -4 -x "$iface" >/dev/null 2>&1 || true
+  ! command -v dhclient >/dev/null || dhclient -4 -x "$iface" >/dev/null 2>&1 || true
+}
+
+# dhcpcd-base is installed by APT, so a host with no Internet may only have dhclient
+# (Debian 12) or no DHCP client at all.
+# dhcpcd runs one daemon per host. When one is already running (from an earlier run
+# or another interface), a new invocation only forwards its command and exits 0, so
+# success is judged by an IPv4 address on the uplink, not by the exit status.
+dhcpcd_running() { pgrep -x dhcpcd >/dev/null; }
+
+wait_for_dhcpcd_exit() {
+  local i
+  for i in {1..20}; do dhcpcd_running || return 0; sleep 0.5; done
+  return 1
+}
+
+wait_for_uplink_ipv4() {
+  local iface=$1 i
+  for i in {1..10}; do
+    [[ -n "$(ip -4 -o addr show dev "$iface" scope global)" ]] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+# `dhcpcd -x` can leave the interface's manager running; the uplink service would then
+# only forward to it and exit 0. Stop every dhcpcd process for this interface so the
+# service becomes the only owner of the lease.
+stop_uplink_dhcp_clients() {
+  local iface=$1 i pid
+  local -a pids
+  dhcpcd -4 -x "$iface" >/dev/null 2>&1 || true
+  for i in {1..20}; do
+    # pgrep exits 1 when nothing matches; that is the success case here, and without
+    # `|| true` mapfile would keep one empty entry and wait for a process that is gone.
+    mapfile -t pids < <(pgrep -f "^dhcpcd: $iface " || true)
+    (( ${#pids[@]} == 0 )) && return 0
+    for pid in "${pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
+    sleep 0.5
+  done
+  printf '  dhcpcd is still running on %s; stop it before the DHCP service can own the lease.\n' "$iface" >&3
+  return 1
+}
+
+request_dhcp_lease() {
+  local iface=$1
+  if command -v dhcpcd >/dev/null; then
+    # A healthy lease held by a running daemon is kept: releasing it first could leave
+    # the uplink without an address when the retry fails.
+    if dhcpcd_running && [[ -n "$(ip -4 -o addr show dev "$iface" scope global)" ]]; then
+      DHCP_CLIENT=dhcpcd
+      return 0
+    fi
+    # Release a daemon left by an earlier run before asking for a fresh lease.
+    stop_dhcp_client "$iface"
+    wait_for_dhcpcd_exit || true
+    run 'Request initial uplink DHCP lease' dhcpcd -4 -L -w -t 30 "$iface" || { stop_dhcp_client "$iface"; return 1; }
+    if ! wait_for_uplink_ipv4 "$iface"; then
+      printf '  dhcpcd finished but %s has no IPv4 address yet.\n' "$iface" >&3
+      stop_dhcp_client "$iface"
+      return 1
+    fi
+    DHCP_CLIENT=dhcpcd
+  elif command -v dhclient >/dev/null; then
+    run 'Request initial uplink DHCP lease (dhclient)' dhclient -4 -1 -v "$iface" || { stop_dhcp_client "$iface"; return 1; }
+    DHCP_CLIENT=dhclient
+  else
+    printf '  No DHCP client (dhcpcd/dhclient) is installed and APT cannot fetch one without connectivity.\n' >&3
+    return 1
+  fi
 }
 
 hostname_wizard() {
@@ -178,11 +341,11 @@ hostname_wizard() {
   HOSTNAME_VALUE=$hostname_value
   DOMAIN_VALUE=$domain_value
   FRR_HOSTNAME_VALUE=$fqdn
-  [[ ! -f /etc/hostname ]] || cp -a /etc/hostname "/etc/hostname.bak.$(date +%Y%m%d%H%M%S)"
+  backup_file /etc/hostname
   printf '%s\n' "$fqdn" > /etc/hostname
   run 'Set Linux hostname' hostnamectl set-hostname "$fqdn"
   if [[ -f /etc/hosts ]]; then
-    cp -a /etc/hosts "/etc/hosts.bak.$(date +%Y%m%d%H%M%S)"
+    backup_file /etc/hosts
     hosts_tmp=$(mktemp /etc/hosts.packetmotion.XXXXXX)
     awk -v short="$hostname_value" -v fqdn="$fqdn" '
       /^127\.0\.1\.1([[:space:]]|$)/ { print "127.0.1.1\t" fqdn " " short; found=1; next }
@@ -196,7 +359,7 @@ hostname_wizard() {
     if [[ -L /etc/resolv.conf ]]; then
       printf '  /etc/resolv.conf is managed by a symlink; DNS domain was not written there. Configure search domain in its resolver manager.\n' >&3
     else
-      [[ ! -f /etc/resolv.conf ]] || cp -a /etc/resolv.conf "/etc/resolv.conf.bak.$(date +%Y%m%d%H%M%S)"
+      backup_file /etc/resolv.conf
       if grep -Eq '^[[:space:]]*search[[:space:]]' /etc/resolv.conf 2>/dev/null; then
         sed -i "s/^[[:space:]]*search[[:space:]].*/search $domain_value/" /etc/resolv.conf
       else
@@ -207,14 +370,14 @@ hostname_wizard() {
 }
 
 network_wizard() {
-  local iface address gateway dns prefix current mode index selection default_selection
+  local iface address gateway dns prefix current mode index selection default_selection lease choice
   local -a interfaces
   local config=/usr/local/sbin/packetmotion-network-init
-  printf '\n  1) DHCP   - Automatic address; choose when the network provides DHCP.\n  2) Static - Fixed address; example: 192.168.1.20/24, gateway 192.168.1.1.\n  3) Keep   - Keep current settings; choose when connectivity already works.\n' >&3
+  printf '\n  1) DHCP   - Automatic address; choose when the network provides DHCP.\n  2) Static - Fixed address; example: 192.168.1.20/24, gateway 192.168.1.1.\n  3) Keep   - Keep current settings; choose when connectivity already works.\n  4) DNS    - Keep addressing, change only the name server.\n' >&3
   while :; do
-    network_prompt 'Network option (1-3; e.g. 3 to keep current)' 3
-    case "$REPLY" in 1) mode=dhcp; break;; 2) mode=static; break;; 3) return 0;; esac
-    printf '  Choose 1, 2, or 3.\n' >&3
+    network_prompt 'Network option (1-4; e.g. 3 to keep current)' 3
+    case "$REPLY" in 1) mode=dhcp; break;; 2) mode=static; break;; 3) return 0;; 4) mode=dns; break;; esac
+    printf '  Choose 1, 2, 3, or 4.\n' >&3
   done
   command -v ip >/dev/null || { printf '  Install iproute2 first, or skip the wizard.\n' >&3; return 1; }
   iface=$(ip -4 route show default | awk 'NR == 1 {print $5}')
@@ -244,21 +407,93 @@ network_wizard() {
     printf '  Choose an available interface number other than loopback.\n' >&3
   done
   printf '  Disable competing DHCP/static settings in your network manager for this interface.\n  Example interface names: ens18, enp1s0, eth0.\n' >&3
+  if [[ "$mode" == dns ]]; then
+    prompt_dns
+    dns=$REPLY
+    if [[ -L /etc/resolv.conf ]] && ! { command -v resolvectl >/dev/null && systemctl is-active --quiet systemd-resolved; }; then
+      printf '  Resolver is managed externally; name server not changed. Configure DNS with its manager.\n' >&3
+      return 0
+    fi
+    # Boot-time owner of the name server only: it never sets addresses or routes,
+    # so a later static IP configured in FRR is not affected.
+    install -d -m 755 /usr/local/sbin
+    backup_file /usr/local/sbin/packetmotion-dns
+    {
+      printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
+      print_resolver_commands "$iface" "$dns"
+    } > /usr/local/sbin/packetmotion-dns
+    chmod 700 /usr/local/sbin/packetmotion-dns
+    backup_file /etc/systemd/system/packetmotion-dns.service
+    cat > /etc/systemd/system/packetmotion-dns.service <<'DNS_SERVICE'
+[Unit]
+Description=PacketMotion uplink name server (DNS only; addresses managed by FRR or DHCP)
+Wants=network-pre.target
+Before=network-pre.target frr.service
+After=systemd-resolved.service packetmotion-network-init.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/packetmotion-dns
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+DNS_SERVICE
+    run 'Reload name server service' systemctl daemon-reload
+    run 'Enable name server at boot' systemctl enable packetmotion-dns.service
+    if run 'Apply name server now' /usr/local/sbin/packetmotion-dns; then
+      printf '  Name server saved and applied; it is restored at every boot.\n' >&3
+      dns_resolves && printf '  Name resolution OK.\n' >&3 || printf '  Name resolution still failing; check the gateway and DNS reachability.\n' >&3
+    else
+      printf '  Name server could not be applied; check the log.\n' >&3
+    fi
+    return 0
+  fi
   if [[ "$mode" == dhcp ]]; then
     printf '  Interface: %s | DHCP | SSH may disconnect.\n' "$iface" >&3
     confirm_choice 'Apply DHCP?' || return 0
+    printf '\n  Name server:\n  1) DHCP-provided\n  2) Manual - enter servers, or press Enter for 8.8.8.8 and 8.8.4.4\n' >&3
+    while :; do
+      network_prompt 'Name server option (1-2)' 2
+      case "$REPLY" in 1) break;; 2) prompt_dns; DHCP_DNS=$REPLY; break;; esac
+      printf '  Choose 1 or 2.\n' >&3
+    done
+    clear_frr_uplink_static "$iface"
     NETWORK_MODE=dhcp
     NETWORK_IFACE=$iface
-    if command -v dhcpcd >/dev/null; then
-      if ! run 'Request initial uplink DHCP lease' dhcpcd -4 -L -w -t 30 "$iface"; then
-        printf '  No DHCP lease acquired; existing connectivity is required for APT. The service will retry after installation.\n' >&3
+    lease=0
+    while (( ! lease )); do
+      if request_dhcp_lease "$iface"; then lease=1; break; fi
+      printf '\n  No DHCP lease acquired on %s.\n  1) Retry DHCP   2) Configure a static IP instead   3) Continue (APT then needs existing connectivity)\n' "$iface" >&3
+      while :; do
+        network_prompt 'Option (1-3)' 2
+        case "$REPLY" in 1|2|3) choice=$REPLY; break;; esac
+        printf '  Choose 1, 2, or 3.\n' >&3
+      done
+      case "$choice" in
+        2) mode=static; NETWORK_MODE=keep; NETWORK_IFACE=; DHCP_DNS=; break;;
+        3) break;;
+      esac
+    done
+    if [[ "$mode" == dhcp ]]; then
+      if (( lease )); then
+        if [[ -n "$DHCP_DNS" ]]; then apply_dns_now "$iface" "$DHCP_DNS" || true; fi
+        if dns_resolves; then
+          printf '  Name resolution OK.\n' >&3
+        else
+          printf '  Name resolution failed.\n' >&3
+          if [[ -z "$DHCP_DNS" ]] && confirm_choice 'Set a name server manually now?' 1; then
+            prompt_dns
+            DHCP_DNS=$REPLY
+            apply_dns_now "$iface" "$DHCP_DNS" || true
+            dns_resolves && printf '  Name resolution OK.\n' >&3 || printf '  Still failing; check DNS reachability. APT may fail.\n' >&3
+          fi
+        fi
       else
-        DHCP_BOOTSTRAP_STARTED=1
+        printf '  Continuing without a lease; the service will keep retrying after installation.\n' >&3
       fi
-    else
-      printf '  DHCP client will be installed by APT; existing Internet access is required until then.\n' >&3
+      return 0
     fi
-    return 0
   fi
   current=$(ip -o -4 addr show dev "$iface" scope global | awk 'NR == 1 {print $4}')
   while :; do
@@ -275,12 +510,8 @@ network_wizard() {
     if valid_ipv4 "$gateway" && valid_gateway "$address" "$gateway"; then break; fi
     printf '  Use a different gateway in the same subnet; avoid network/broadcast addresses.\n' >&3
   done
-  while :; do
-    network_prompt 'DNS server IPv4 address (e.g. 1.1.1.1 or 8.8.8.8)' '1.1.1.1'
-    dns=$REPLY
-    if valid_ipv4 "$dns"; then break; fi
-    printf '  Enter a valid IPv4 DNS server.\n' >&3
-  done
+  prompt_dns
+  dns=$REPLY
   # Respect resolver-managed symlinks rather than overwriting their targets.
   if [[ -L /etc/resolv.conf ]] && ! { command -v resolvectl >/dev/null && systemctl is-active --quiet systemd-resolved; }; then
     printf '  Resolver is managed externally. Configure DNS with its manager and rerun, or skip the wizard.\n' >&3
@@ -294,21 +525,14 @@ network_wizard() {
   NETWORK_ADDRESS=$address
   NETWORK_GATEWAY=$gateway
   install -d -m 755 /usr/local/sbin
-  [[ ! -f "$config" ]] || cp -a "$config" "${config}.bak.$(date +%Y%m%d%H%M%S)"
-  if [[ -e /etc/resolv.conf && ! -L /etc/resolv.conf ]]; then
-    cp -a /etc/resolv.conf "/etc/resolv.conf.bak.$(date +%Y%m%d%H%M%S)"
-  fi
+  backup_file "$config"
+  [[ -L /etc/resolv.conf ]] || backup_file /etc/resolv.conf
   {
     printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
     printf 'ip link set dev %q up\n' "$iface"
     printf 'ip -4 address replace %q dev %q\n' "$address" "$iface"
     printf 'ip -4 route replace default via %q dev %q\n' "$gateway" "$iface"
-    if command -v resolvectl >/dev/null && systemctl is-active --quiet systemd-resolved; then
-      printf 'resolvectl dns %q %q\nresolvectl domain %q %q\n' "$iface" "$dns" "$iface" '~.'
-    else
-      printf '[[ ! -L /etc/resolv.conf ]] || { echo "Resolver management changed; configure DNS manually" >&2; exit 1; }\n'
-      printf 'printf "nameserver %%s\\n" %q > /etc/resolv.conf\n' "$dns"
-    fi
+    print_resolver_commands "$iface" "$dns"
   } > "$config"
   chmod 700 "$config"
   run 'Apply Internet network configuration' "$config"
@@ -320,6 +544,9 @@ network_wizard() {
   fi
   printf '  APT will verify repository access next. Manual reapply: %s\n' "$config" >&3
 }
+
+step 'Initialize Internet network configuration'
+network_wizard
 
 SSH_MODE=keep
 printf '\n  SSH access:\n  1) Keep - Preserve current login settings (recommended; example: key-based login stays unchanged).\n  2) Lab  - Enable root password login for an isolated lab (example: root + password).\n' >&3
@@ -335,23 +562,24 @@ while :; do
   printf '  Choose 1 or 2.\n' >&3
 done
 
-step 'Initialize Internet network configuration'
-network_wizard
-
 step 'Configure system hostname and domain'
 hostname_wizard
 
 step 'Update system packages (live APT output)'
 
 export DEBIAN_FRONTEND=noninteractive
+# Installer output goes to the log, so a dpkg conffile prompt would hang unseen.
+# Keep existing local configuration and wait briefly for a held APT/dpkg lock.
+APT_OPTS=(-o Dpkg::Progress-Fancy=0 -o APT::Color=0 -o DPkg::Lock::Timeout=120
+  -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 
-run 'APT index refresh (repository downloads)' apt-get -o Dpkg::Progress-Fancy=0 -o APT::Color=0 update
+run 'APT index refresh (repository downloads)' apt-get "${APT_OPTS[@]}" update
 
-run 'APT upgrade (package changes)' apt-get -o Dpkg::Progress-Fancy=0 -o APT::Color=0 upgrade -y
+run 'APT upgrade (package changes)' apt-get "${APT_OPTS[@]}" upgrade -y
 
 step 'Install required components (live dpkg output)'
 
-run 'Install routing, tunnel and diagnostic packages' apt-get -o Dpkg::Progress-Fancy=0 -o APT::Color=0 install -y \
+run 'Install routing, tunnel and diagnostic packages' apt-get "${APT_OPTS[@]}" install -y \
   sudo openssh-server ca-certificates curl gnupg iproute2 iputils-ping \
   dnsutils traceroute tcpdump ethtool jq vim nano git chrony wireguard \
   wireguard-tools nftables frr frr-pythontools kmod conntrack iperf3 \
@@ -362,7 +590,7 @@ step 'Enable FRR routing daemons'
 
 FRR_FILE=/etc/frr/daemons
 
-cp -a "$FRR_FILE" "${FRR_FILE}.bak.$(date +%Y%m%d%H%M%S)"
+backup_file "$FRR_FILE"
 
 DAEMONS=(zebra bgpd ospfd ospf6d bfdd staticd)
 
@@ -379,7 +607,7 @@ run 'Enable FRR service' systemctl enable frr
 # routing configuration while keeping FRR's stock greeting out of CLI output.
 for config in /etc/frr/vtysh.conf /etc/frr/frr.conf; do
   if [[ -f "$config" ]] && grep -Eq '^[[:space:]]*no[[:space:]]+banner[[:space:]]+motd[[:space:]]*$' "$config"; then
-    cp -a "$config" "${config}.bak.$(date +%Y%m%d%H%M%S)"
+    backup_file "$config"
     run 'Remove unsupported FRR banner directive' sed -i '/^[[:space:]]*no[[:space:]]\+banner[[:space:]]\+motd[[:space:]]*$/d' "$config"
   fi
 done
@@ -388,13 +616,13 @@ done
 # routing config. MOTD configuration belongs in vtysh.conf, so migrate it
 # there and leave frr.conf with valid routing configuration only.
 if [[ -f /etc/frr/frr.conf ]] && grep -Eq '^[[:space:]]*banner[[:space:]]+motd([[:space:]]|$)' /etc/frr/frr.conf; then
-  cp -a /etc/frr/frr.conf "/etc/frr/frr.conf.bak.$(date +%Y%m%d%H%M%S)"
+  backup_file /etc/frr/frr.conf
   run 'Remove MOTD directive from integrated FRR config' sed -i '/^[[:space:]]*banner[[:space:]]\+motd\([[:space:]].*\)\?$/d' /etc/frr/frr.conf
 fi
 
 # FRR's configured hostname controls the vtysh CLI prompt. Preserve the
 # existing integrated config and update only its top-level hostname command.
-[[ ! -f /etc/frr/frr.conf ]] || cp -a /etc/frr/frr.conf "/etc/frr/frr.conf.bak.$(date +%Y%m%d%H%M%S)"
+backup_file /etc/frr/frr.conf
 if grep -Eq '^[[:space:]]*hostname[[:space:]]+' /etc/frr/frr.conf 2>/dev/null; then
   sed -i "s/^[[:space:]]*hostname[[:space:]].*/hostname $FRR_HOSTNAME_VALUE/" /etc/frr/frr.conf
 else
@@ -416,7 +644,7 @@ else
 fi
 
 # Use integrated configuration so write memory persists all enabled daemons.
-[[ ! -f /etc/frr/vtysh.conf ]] || cp -a /etc/frr/vtysh.conf "/etc/frr/vtysh.conf.bak.$(date +%Y%m%d%H%M%S)"
+backup_file /etc/frr/vtysh.conf
 if [[ -f /etc/frr/vtysh.conf ]]; then
   run 'Remove conflicting FRR persistence setting' sed -i '/^[[:space:]]*\(no[[:space:]]\+\)\?service[[:space:]]\+integrated-vtysh-config[[:space:]]*$/d' /etc/frr/vtysh.conf
 fi
@@ -430,11 +658,17 @@ if [[ "$NETWORK_MODE" != keep && -f /etc/systemd/system/packetmotion-network-ini
   run 'Disable legacy Linux static boot configuration' systemctl disable --now packetmotion-network-init.service
 fi
 
+# DHCP and static modes own the name server now; retire the DNS-only unit so it
+# cannot override their setting at boot.
+if [[ "$NETWORK_MODE" != keep && -f /etc/systemd/system/packetmotion-dns.service ]]; then
+  run 'Disable DNS-only boot setting (addressing mode now owns DNS)' systemctl disable --now packetmotion-dns.service
+fi
+
 if [[ "$NETWORK_MODE" == static ]]; then
   if [[ -f /etc/systemd/system/packetmotion-dhcp.service ]]; then
     run 'Stop previous PacketMotion DHCP client' systemctl disable --now packetmotion-dhcp.service
   fi
-  [[ ! -f /etc/frr/frr.conf ]] || cp -a /etc/frr/frr.conf "/etc/frr/frr.conf.bak.$(date +%Y%m%d%H%M%S)"
+  backup_file /etc/frr/frr.conf
   run 'Save static uplink configuration' vtysh -c 'configure terminal' \
     -c "interface $NETWORK_IFACE" -c 'no shutdown' \
     -c "ip address $NETWORK_ADDRESS" -c 'exit' \
@@ -442,7 +676,7 @@ if [[ "$NETWORK_MODE" == static ]]; then
   # Keep only Linux DNS/link setup in the helper; FRR restores IPs/routes.
   run 'Finalize static startup configuration' \
     sed -i '/^ip -4 address replace /d; /^ip -4 route replace /d' /usr/local/sbin/packetmotion-network-init
-  [[ ! -f /etc/systemd/system/packetmotion-network-init.service ]] || cp -a /etc/systemd/system/packetmotion-network-init.service "/etc/systemd/system/packetmotion-network-init.service.bak.$(date +%Y%m%d%H%M%S)"
+  backup_file /etc/systemd/system/packetmotion-network-init.service
   cat > /etc/systemd/system/packetmotion-network-init.service <<'NETWORK_SERVICE'
 [Unit]
 Description=PacketMotion uplink link and DNS setup (static IP managed by FRR)
@@ -462,14 +696,15 @@ NETWORK_SERVICE
   run 'Enable uplink link and DNS setup' systemctl enable --now packetmotion-network-init.service
   run 'Reapply static uplink DNS' /usr/local/sbin/packetmotion-network-init
 elif [[ "$NETWORK_MODE" == dhcp ]]; then
+  DHCPCD_BIN=$(command -v dhcpcd) || { printf '  dhcpcd not found after package install; cannot create DHCP service.\n' >&3; exit 1; }
   install -d -m 755 /usr/local/sbin
-  [[ ! -f /usr/local/sbin/packetmotion-dhcp ]] || cp -a /usr/local/sbin/packetmotion-dhcp "/usr/local/sbin/packetmotion-dhcp.bak.$(date +%Y%m%d%H%M%S)"
+  backup_file /usr/local/sbin/packetmotion-dhcp
   {
     printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
-    printf 'exec %q -B -4 -L -w -t 30 %q\n' "$(command -v dhcpcd)" "$NETWORK_IFACE"
+    printf 'exec %q -B -4 -L -w -t 30 %q\n' "$DHCPCD_BIN" "$NETWORK_IFACE"
   } > /usr/local/sbin/packetmotion-dhcp
   chmod 700 /usr/local/sbin/packetmotion-dhcp
-  [[ ! -f /etc/systemd/system/packetmotion-dhcp.service ]] || cp -a /etc/systemd/system/packetmotion-dhcp.service "/etc/systemd/system/packetmotion-dhcp.service.bak.$(date +%Y%m%d%H%M%S)"
+  backup_file /etc/systemd/system/packetmotion-dhcp.service
   cat > /etc/systemd/system/packetmotion-dhcp.service <<'DHCP_SERVICE'
 [Unit]
 Description=PacketMotion Linux uplink DHCP client
@@ -485,15 +720,23 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 DHCP_SERVICE
-  # Stop only the selected interface's standalone client before systemd owns it.
-  if (( DHCP_BOOTSTRAP_STARTED )); then
-    run 'Stop bootstrap DHCP client' dhcpcd -4 -x "$NETWORK_IFACE"
+  # Stop the selected interface's standalone clients before systemd owns it.
+  if [[ "$DHCP_CLIENT" == dhclient ]]; then
+    run 'Stop bootstrap DHCP client' dhclient -4 -x "$NETWORK_IFACE" || true
+  fi
+  run 'Stop bootstrap DHCP client' stop_uplink_dhcp_clients "$NETWORK_IFACE"
+  if [[ -n "$DHCP_DNS" ]]; then
+    # dhcpcd rewrites resolv.conf on renewal; pin the manual name server for this interface.
+    touch /etc/dhcpcd.conf
+    backup_file /etc/dhcpcd.conf
+    sed -i '/^# packetmotion-dns begin$/,/^# packetmotion-dns end$/d' /etc/dhcpcd.conf
+    printf '# packetmotion-dns begin\ninterface %s\nstatic domain_name_servers=%s\n# packetmotion-dns end\n' "$NETWORK_IFACE" "$DHCP_DNS" >> /etc/dhcpcd.conf
   fi
   run 'Reload DHCP service configuration' systemctl daemon-reload
   run 'Enable uplink DHCP client' systemctl enable packetmotion-dhcp.service
   run 'Start uplink DHCP client' systemctl restart packetmotion-dhcp.service
+  wait_for_uplink_ipv4 "$NETWORK_IFACE" || true
   printf '  DHCP lease status: journalctl -u packetmotion-dhcp.service; ip -4 addr show dev %s\n' "$NETWORK_IFACE" >&3
-  printf '  Remove previous static address and default route settings when switching to DHCP.\n' >&3
 fi
 
 
@@ -550,7 +793,7 @@ if [[ "$SSH_MODE" == lab ]]; then
 
   SSH_DROPIN=/etc/ssh/sshd_config.d/00-packetmotion-lab.conf
 
-  [[ ! -f "$SSH_DROPIN" ]] || cp -a "$SSH_DROPIN" "${SSH_DROPIN}.bak.$(date +%Y%m%d%H%M%S)"
+  backup_file "$SSH_DROPIN"
 
   cat > "$SSH_DROPIN" <<'SSH'
 
