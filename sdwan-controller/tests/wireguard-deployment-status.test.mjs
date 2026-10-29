@@ -19,5 +19,11 @@ test('receipt/apply/freshness and handshake remain separate with actionable next
   }
   const missing = deploymentStatus({ ...device, handshakes: [{ name: 'pm123456789abc', lastHandshake: 0 }] }, now);
   assert.equal(missing.applied, true); assert.match(missing.label, /no recent handshake/);
+  assert.equal(missing.ok, false);
   assert.match(deploymentStatus({ ...device, tunnelCount: 0, handshakes: [] }, now).label, /no active tunnels/);
+});
+
+test('ok is true only for an applied plan with nothing to act on', () => {
+  assert.equal(deploymentStatus({ ...device, tunnelCount: 0, handshakes: [] }).ok, true);
+  assert.equal(deploymentStatus({ ...device, applyStatus: 'disabled' }).ok, false);
 });

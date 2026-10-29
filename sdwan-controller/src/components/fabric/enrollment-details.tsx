@@ -31,7 +31,7 @@ export function EnrollmentInstructions({
     : null;
   const needsServerCaPin = allowHttp && !local;
   const installCommand = origin
-    ? `curl -fsSLo install.sh ${origin}/fabric/edge.sh && printf '%s\\n' '${enrollment.token}' | sudo bash install.sh --controller ${origin}${allowHttp ? ' --allow-insecure-local' : ''}${serverCaSha256 ? ` --server-ca-sha256 ${serverCaSha256}` : ''}${enrollment.nodeId ? ` --expected-node-id ${enrollment.nodeId}` : ''} --token-stdin`
+    ? `curl -fsSLo install.sh ${origin}/fabric/edge.sh && printf '%s\\n' '${enrollment.token}' | sudo bash install.sh --controller ${origin}${allowHttp ? ' --allow-insecure-local' : ''}${serverCaSha256 ? ` --server-ca-sha256 ${serverCaSha256}` : ''}${enrollment.nodeId ? ` --expected-node-id ${enrollment.nodeId}` : ''} --enable-wireguard --token-stdin`
     : '';
   return (
     <section

@@ -11,6 +11,7 @@ SERVER_CA_SHA256=''
 TOKEN_STDIN=0
 REQUESTED_VERSION=''
 EXPECTED_NODE_ID=''
+ENABLE_WIREGUARD=0
 STAGE=preflight
 RESET_REQUIRED=0
 RESET_ACTIVE=0
@@ -185,6 +186,19 @@ cleanup() {
   [[ -z "$ENROLL_CA" ]] || rm -f -- "$ENROLL_CA"
 }
 trap cleanup EXIT
+# Optional local opt-in, run on this appliance by the operator who passed
+# --enable-wireguard. Failure never undoes enrollment or the upgrade: the
+# management-only service stays running and the manual command is printed.
+enable_wireguard() {
+  [[ $ENABLE_WIREGUARD -eq 1 ]] || return 0
+  progress wireguard-activation
+  if ! printf '%s\n' "$SELECTED_VERSION" | python3 -c 'import sys;sys.exit(0 if tuple(map(int,sys.stdin.read().split(".")))>=(0,3,6) else 1)'; then
+    printf 'WireGuard activation skipped: agent %s predates "network enable" (needs 0.3.6 or newer).\n' "$SELECTED_VERSION"
+    return 0
+  fi
+  if "$BIN" network enable && "$BIN" network status; then return 0; fi
+  printf 'WireGuard activation did not complete; the agent keeps running management-only. Fix the reported prerequisite (iproute2, wireguard-tools, nftables) and run: sudo fabric-agent network enable\n' >&2
+}
 trap 'fail "unexpected command failure; inspect the current stage and service status"' ERR
 while (($#)); do
   case "$1" in
@@ -193,6 +207,7 @@ while (($#)); do
     --server-ca-sha256) (($# >= 2)) || fail 'missing server CA SHA-256 fingerprint'; SERVER_CA_SHA256=$2; shift 2 ;;
     --token-stdin) TOKEN_STDIN=1; shift ;;
     --expected-node-id) (($# >= 2)) || fail 'missing expected device ID'; EXPECTED_NODE_ID=$2; shift 2 ;;
+    --enable-wireguard) ENABLE_WIREGUARD=1; shift ;;
     --version) (($# >= 2)) || fail 'missing agent version'; REQUESTED_VERSION=$2; shift 2 ;;
     *) fail 'unknown installer option' ;;
   esac
@@ -363,6 +378,7 @@ if [[ "$IDENTITY_STATE" == enrolled ]]; then
     fail 'agent upgrade could not start; previous binary was restored'
   fi
   systemctl show fabric-agent.service -p ActiveState -p SubState -p Result -p ExecMainStatus
+  enable_wireguard
   printf 'PacketMotion agent %s upgrade requested; verify heartbeat on the existing dashboard device.\n' "$SELECTED_VERSION"
   exit 0
 fi
@@ -379,4 +395,5 @@ if ! systemctl enable --now fabric-agent.service; then
   fail 'agent enrollment completed but service could not start; identity is preserved for recovery'
 fi
 systemctl show fabric-agent.service -p ActiveState -p SubState -p Result -p ExecMainStatus
+enable_wireguard
 printf 'PacketMotion agent %s enrolled; service start requested. Verify a fresh heartbeat and configuration receipt in the dashboard.\n' "$SELECTED_VERSION"

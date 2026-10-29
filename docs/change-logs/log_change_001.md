@@ -1865,3 +1865,19 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: none; only the installer's status output changes.
 - Risks/rollback: `git revert` the change.
 - Next: rerun the installer on the lab VM and confirm no `INSTALLATION STOPPED` line appears during the DHCP stop.
+## INSTALLER-WG-ACTIVATE-001 — 2026-10-29 — Claude Code
+
+- Status: COMPLETE (script/UI string/test; no appliance run).
+- Summary: installer gains `--enable-wireguard`, which runs the existing local `fabric-agent network enable` + `network status` after enrollment or upgrade (agent >= 0.3.6 only; failure is non-fatal and prints the manual command). Dashboard enrollment and upgrade commands now include the flag. Operator still runs it locally; the controller grants no privilege.
+- Files: sdwan-edge/install/edge.sh; sdwan-controller/public/fabric/edge.sh (rendered copy, same edit); enrollment-details.tsx; agent-upgrade.tsx; tests/installer-identity.test.mjs.
+- Checks: bash -n PASS; installer node tests PASS. UNVERIFIED: real Debian run, browser tests for the changed command text.
+- Risks/rollback: activation restarts the service and adds CAP_NET_ADMIN drop-in on that device. git revert.
+- Next: re-run the new install command on a lab edge/hub and confirm network status.
+## DEPLOY-STATUS-ICON-001 — 2026-10-29 — Claude Code
+
+- Status: COMPLETE (UI/test; no browser check).
+- Summary: Deployment status rows show a green check when applied with nothing to act on and a yellow warning otherwise; `deploymentStatus` returns a new `ok` flag.
+- Files: wireguard-deployment.tsx; wireguard-deployment-status.ts; tests/wireguard-deployment-status.test.mjs.
+- Checks: tsc PASS; npm test 84 pass, 2 pre-existing failures (desired route tests 18/19, also failing without these changes). UNVERIFIED: browser/visual.
+- Risks/rollback: git revert.
+- Next: view the panel on a lab controller.

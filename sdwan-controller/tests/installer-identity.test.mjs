@@ -40,3 +40,20 @@ for (const file of ['../sdwan-edge/install/edge.sh', 'public/fabric/edge.sh']) {
     assert.doesNotMatch(result.stdout + result.stderr, /secret-token-sentinel/);
   });
 }
+
+for (const file of ['../sdwan-edge/install/edge.sh', 'public/fabric/edge.sh']) {
+  test(`${file} runs local WireGuard activation only when requested and never fails the install`, () => {
+    const fn = readFileSync(file, 'utf8').match(/enable_wireguard\(\) \{[\s\S]*?\n\}/)?.[0];
+    assert.ok(fn);
+    function run(flag, version, enableExit) {
+      return spawnSync('bash', ['-c', `${fn}\nprogress() { :; }\nBIN=fake\nfake() { echo "fake $*"; return ${enableExit}; }\nBIN=fake\nENABLE_WIREGUARD=${flag}; SELECTED_VERSION=${version}\nenable_wireguard; echo rc=$?`], { encoding: 'utf8' });
+    }
+    assert.doesNotMatch(run(0, '0.4.0', 0).stdout, /fake/);
+    assert.match(run(1, '0.3.5', 0).stdout, /skipped/);
+    const ok = run(1, '0.4.0', 0);
+    assert.match(ok.stdout, /fake network enable[\s\S]*fake network status/);
+    const failed = run(1, '0.4.0', 1);
+    assert.match(failed.stdout, /rc=0/);
+    assert.match(failed.stderr, /network enable/);
+  });
+}

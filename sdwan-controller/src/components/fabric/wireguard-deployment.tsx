@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
+import { CircleCheck, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Feedback } from '@/components/ui/feedback';
 import {
@@ -59,7 +60,14 @@ export function WireguardDeploymentStatus({ deployment }: { deployment: Wireguar
             >
               {device.name}
             </Link>
-            <p>{status.label}</p>
+            <p className="flex items-center gap-2">
+              {status.ok ? (
+                <CircleCheck aria-hidden="true" className="size-4 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <TriangleAlert aria-hidden="true" className="size-4 text-amber-600 dark:text-amber-400" />
+              )}
+              <span>{status.label}</span>
+            </p>
             <p className="text-xs leading-5 text-muted-foreground">{status.next}</p>
             <p className="text-xs text-muted-foreground">
               Published revision {device.revision ?? '—'} · Receipt {device.receipt ?? 'pending'} ·

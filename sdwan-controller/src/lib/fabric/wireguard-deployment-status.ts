@@ -32,54 +32,63 @@ export function deploymentStatus(device: DeploymentDevice, now = Date.now()) {
       label: 'Revoked',
       next: 'Credentials are revoked. Review the device lifecycle before provisioning a replacement.',
       applied: false,
+      ok: false,
     };
   if (!device.online)
     return {
       label: 'Offline or awaiting heartbeat',
       next: 'Check the agent service and controller connectivity. Published configuration stays pending until the device reconnects.',
       applied: false,
+      ok: false,
     };
   if (device.receipt === 'rejected')
     return {
       label: 'Configuration rejected',
       next: 'Check agent version and service logs for the rejection. Correct the configuration, save a draft, and deploy again.',
       applied: false,
+      ok: false,
     };
   if (!device.revision || device.receipt !== 'received')
     return {
       label: 'Awaiting configuration receipt',
       next: 'Wait for the next agent check-in. If this persists, check management connectivity and the agent service.',
       applied: false,
+      ok: false,
     };
   if (device.observedRevision !== device.revision || !device.matchingChecksum)
     return {
       label: 'Received; awaiting apply report',
       next: 'The agent received the latest revision, but its apply result is not current. Check its service logs if the next check-in does not update this status.',
       applied: false,
+      ok: false,
     };
   if (!device.observationFresh)
     return {
       label: 'Apply report is stale',
       next: 'Refresh after the next agent check-in. An old report does not prove the current kernel state.',
       applied: false,
+      ok: false,
     };
   if (device.applyStatus === 'disabled')
     return {
       label: 'Local activation required',
       next: 'Enable the local WireGuard opt-in on this appliance. Saving or deploying configuration does not grant network privileges. Both Edge and Hub must be activated.',
       applied: false,
+      ok: false,
     };
   if (device.applyStatus === 'failed')
     return {
       label: 'Network apply failed',
       next: 'Read the agent service logs to identify the failed preflight/apply step. Correct the local prerequisite; the agent retries reconciliation. Redeploy only when the configuration changes.',
       applied: false,
+      ok: false,
     };
   if (device.applyStatus !== 'applied')
     return {
       label: 'Apply not reported',
       next: 'Confirm the agent supports network observations and check its service logs.',
       applied: false,
+      ok: false,
     };
   const recent =
     device.handshakes?.length === device.tunnelCount &&
@@ -103,5 +112,7 @@ export function deploymentStatus(device: DeploymentDevice, now = Date.now()) {
           ? 'Verify tunnel-IP reachability separately. A handshake does not prove LAN forwarding.'
           : 'Check the counterpart activation, Hub endpoint, assigned UDP port, firewall/NAT, and peer configuration. No recent handshake is not a verified connectivity result.',
     applied: true,
+    // Green only when nothing needs operator attention.
+    ok: device.tunnelCount === 0 || recent,
   };
 }
