@@ -1780,3 +1780,66 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: None.
 - Risks/rollback: Hook applies to all Claude Code projects for this user. Rollback with `rtk init -g --uninstall` or restore `~/.claude/settings.json.bak`; remove `~/.local/bin/rtk`.
 - Next: Restart Claude Code; register claude-context with user-scope credentials and index.
+## BOOTSTRAP-V1.8-HARDENING-001 — 2026-10-28 — Claude Code
+
+- Status: COMPLETE (script/test only; no appliance run).
+- Summary: In `packetmotion-fabric-bootstrap-v1.8.sh`, fixed the step counter (`[n/13]` -> `[n/12]`, now `TOTAL_STEPS`); added shared `APT_OPTS` (`--force-confdef/--force-confold`, `DPkg::Lock::Timeout=120`) so dpkg conffile prompts cannot hang unseen behind the log redirect; replaced ~15 copy-pasted timestamp backups with `backup_file` using `cp -an`, so same-second backups of `frr.conf` no longer overwrite the original with a modified copy. No prompts, UI text beyond the step total, packages or configuration content changed.
+- Files: `sdwan-edge/sdwan-provisioning-scripts/packetmotion-fabric-bootstrap-v1.8.sh`; `tests/bootstrap-interface-names.test.mjs`; this log.
+- Checks: `bash -n` PASS; `node --test tests/bootstrap-interface-names.test.mjs` PASS. UNVERIFIED: execution on Debian 12/13 (APT options, backup behavior); shellcheck not installed.
+- UI/network impact: Installer progress shows `/12`; no network behavior change.
+- Risks/rollback: `cp -an` keeps the earliest same-second backup rather than the latest. `git revert` the change.
+- Next: Run once on an isolated Debian 12/13 lab VM.
+## BOOTSTRAP-V1.8-HARDENING-002 — 2026-10-28 — Claude Code
+
+- Status: COMPLETE (script/test only; lab re-run pending).
+- Summary: Lab run as `su` (no `-`) failed with `sysctl: command not found` and spurious "INSTALLATION STOPPED at line 475": PATH lacked /usr/sbin, so `command -v dhcpcd` failed inside a `$(...)` subshell (ERR trap fired there, exiting only the subshell) and wrote `exec  -B ...` into /usr/local/sbin/packetmotion-dhcp. Fix: export a full PATH at script start; resolve dhcpcd into `DHCPCD_BIN` with an explicit error.
+- Files: `sdwan-edge/sdwan-provisioning-scripts/packetmotion-fabric-bootstrap-v1.8.sh`; `tests/bootstrap-interface-names.test.mjs`; this log.
+- Checks: `bash -n` PASS; `node --test tests/bootstrap-interface-names.test.mjs` PASS. UNVERIFIED: re-run on the Debian 13 lab VM.
+- UI/network impact: none beyond fixing the DHCP service ExecStart.
+- Risks/rollback: `git revert`. A broken `/usr/local/sbin/packetmotion-dhcp` from the earlier run is rewritten on re-run (backup kept).
+- Next: Re-run on the lab VM.
+## Bootstrap v1.8: network and name server first, DHCP fallbacks
+- Network wizard (now incl. option 4 name-server-only) runs before the SSH, hostname and APT prompts; OS validation stays first as a read-only guard.
+- DHCP: manual name server option, dhclient fallback when dhcpcd is absent offline, retry/static/continue menu on lease failure, DNS resolution check after lease, manual DNS pinned in /etc/dhcpcd.conf.
+- Tests: `node --test tests/bootstrap-interface-names.test.mjs` (syntax + ordering + new options). UNVERIFIED: real Debian run without Internet.
+- Rollback: git revert; /etc/dhcpcd.conf and /etc/resolv.conf keep .bak.* copies.
+## Bootstrap v1.8: name server input
+- prompt_dns accepts 1-3 IPv4 servers (space/comma), Enter defaults to 8.8.8.8 8.8.4.4; DHCP name-server menu now defaults to manual. Applies to static, DHCP and DNS-only paths.
+- Tests: node --test tests/bootstrap-interface-names.test.mjs; prompt_dns exercised in isolation. UNVERIFIED: real Debian run.
+- Rollback: git revert.
+## BOOTSTRAP-V1.8-DNS-PERSIST-001 — 2026-10-28 — Claude Code
+
+- Status: COMPLETE (script/test only; no appliance run).
+- Summary: Wizard option 4 (name server only) was runtime-only and lost on reboot. It now writes `/usr/local/sbin/packetmotion-dns` and `packetmotion-dns.service` (DNS only; no addresses or routes), enables it, and applies it at once. The resolver lines are shared with the static helper through `print_resolver_commands`. DHCP and static modes disable the DNS-only unit so it cannot override their name server at boot. The unit runs after `packetmotion-network-init.service`, so a leftover static helper cannot revert it.
+- Files: `sdwan-edge/sdwan-provisioning-scripts/packetmotion-fabric-bootstrap-v1.8.sh`; `tests/bootstrap-interface-names.test.mjs`; this log.
+- Checks: `bash -n` PASS; `node --test tests/bootstrap-interface-names.test.mjs` PASS (9/9, incl. new DNS-only test); generated helper rendered to scratchpad and `bash -n` PASS. shellcheck not installed. UNVERIFIED: reboot persistence on Debian 12/13 (systemd-resolved and plain resolv.conf); interaction with a DHCP client that renews resolv.conf.
+- UI/network impact: Option 4 now persists DNS across reboot. Addresses and routes are not touched, so later static IP via FRR is unaffected. Wizard text for option 4 changed.
+- Risks/rollback: If a DHCP client rewrites resolv.conf later, the boot unit restores the chosen DNS at the next boot only. Rollback: `systemctl disable --now packetmotion-dns.service`, remove the unit and `/usr/local/sbin/packetmotion-dns`, then restore `/etc/resolv.conf` from its `.bak.*` copy; or `git revert`.
+- Next: Verify reboot on an isolated Debian 12/13 lab VM for both resolved and plain resolv.conf.
+## BOOTSTRAP-V1.8-DHCP-RERUN-001 — 2026-10-28 — Claude Code
+
+- Status: COMPLETE (script/test only; lab rerun pending).
+- Summary: Rerunning the installer with DHCP after a static run failed to get a lease. FRR kept the earlier static address and default route on the uplink and restored them on each FRR restart, which the installer does on every run. The DHCP branch now removes this interface's FRR static `ip address` and `ip route` entries before requesting the lease, and saves the config with `write memory` so FRR does not restore them at restart. The removed lines are printed. The stale "remove previous static settings" note was removed because the script now does it.
+- Files: `sdwan-edge/sdwan-provisioning-scripts/packetmotion-fabric-bootstrap-v1.8.sh`; `tests/bootstrap-interface-names.test.mjs`; this log.
+- Checks: `bash -n` PASS; `node --test tests/bootstrap-interface-names.test.mjs` PASS (10/10, incl. new ordering test); `clear_frr_uplink_static` run against a fake vtysh in scratchpad, emitting the expected `no ip route` / `no ip address` sequence. UNVERIFIED: DHCP lease on the failing segment; the root cause was not reproduced on a live DHCP network.
+- UI/network impact: DHCP mode removes the uplink's static address and default route from FRR, so SSH over that uplink drops until the lease is acquired. If no lease is obtained, the interface has no static address; rerun and choose static, or restore the printed lines.
+- Risks/rollback: Removed FRR static lines are printed in the install output; restore with `vtysh -c 'configure terminal' -c 'interface X' -c 'ip address A/P' ...`. `git revert` the script change.
+- Next: Rerun on the lab VM with a DHCP server and confirm the lease.
+## BOOTSTRAP-V1.8-DHCP-DAEMON-001 — 2026-10-28 — Claude Code
+
+- Status: COMPLETE (script/test only; lab rerun pending).
+- Summary: On a host where a dhcpcd daemon already existed, the wizard's `dhcpcd -4 -L -w -t 30` only forwarded its command to that daemon and exited 0 in 0 s ("sending commands to dhcpcd process"). The installer reported DONE with no lease, then stopped and restarted the service. Fix: release any running daemon on the interface and wait for it to exit before requesting a lease; treat the request as successful only when the uplink has a global IPv4 address (`wait_for_uplink_ipv4`); wait for the old daemon to exit before starting `packetmotion-dhcp.service`. A failed lease now reaches the existing retry menu.
+- Files: `sdwan-edge/sdwan-provisioning-scripts/packetmotion-fabric-bootstrap-v1.8.sh`; `tests/bootstrap-interface-names.test.mjs`; this log.
+- Checks: `bash -n` PASS; `node --test tests/bootstrap-interface-names.test.mjs` PASS (11/11). Stubbed `request_dhcp_lease` in scratchpad: daemon without IPv4 returns 1 and sets no DHCP_CLIENT; successful lease returns 0 with DHCP_CLIENT=dhcpcd. UNVERIFIED: real DHCP lease on the failing host; behavior when one daemon manages several interfaces (the service's dhcpcd may still forward and exit).
+- UI/network impact: DHCP request releases an existing dhcpcd lease on the chosen interface first, so SSH on that interface may drop briefly. Failed leases now show the retry menu instead of continuing silently.
+- Risks/rollback: `git revert` the script change. If a daemon manages other interfaces, `dhcpcd -x iface` stops only that interface, but the service start may still defer to the daemon; verify `systemctl status packetmotion-dhcp`.
+- Next: Rerun DHCP twice on a lab VM with a DHCP server and confirm `ip -4 addr` and `journalctl -u packetmotion-dhcp` after each run.
+## BOOTSTRAP-V1.8-DHCP-RETRY-001 — 2026-10-28 — Claude Code
+
+- Status: COMPLETE (script/test only; lab rerun pending).
+- Summary: A DHCP retry released the healthy lease first (`dhcpcd -x`), then waited up to ~50 s for a new one and failed, although DHCP was active. `request_dhcp_lease` now keeps the lease when a dhcpcd daemon is running and the uplink already has a global IPv4 address. Release and re-request run only when no address is held.
+- Files: `sdwan-edge/sdwan-provisioning-scripts/packetmotion-fabric-bootstrap-v1.8.sh`; `tests/bootstrap-interface-names.test.mjs`; this log.
+- Checks: `bash -n` PASS; `node --test tests/bootstrap-interface-names.test.mjs` PASS (12/12). Stubbed `request_dhcp_lease` in scratchpad: healthy daemon with IPv4 returns 0 with DHCP_CLIENT=dhcpcd and issues no `dhcpcd -x`; daemon without IPv4 releases, requests, and fails. UNVERIFIED: retry on the live host.
+- UI/network impact: a retry on a healthy DHCP uplink now changes nothing and returns quickly. Failed retries no longer drop the existing address.
+- Risks/rollback: An address from a non-DHCP source is accepted when a daemon is running; the FRR static cleanup runs before the lease request, which limits this. `git revert` the change.
+- Next: On the lab VM, run retry with DHCP active (expect immediate success) and with DHCP stopped (expect a lease or a clean retry menu).
