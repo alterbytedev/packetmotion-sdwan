@@ -266,6 +266,23 @@ wait_for_uplink_ipv4() {
   return 1
 }
 
+# `dhcpcd -x` can leave the interface's manager running; the uplink service would then
+# only forward to it and exit 0. Stop every dhcpcd process for this interface so the
+# service becomes the only owner of the lease.
+stop_uplink_dhcp_clients() {
+  local iface=$1 i pid
+  local -a pids
+  dhcpcd -4 -x "$iface" >/dev/null 2>&1 || true
+  for i in {1..20}; do
+    mapfile -t pids < <(pgrep -f "^dhcpcd: $iface ")
+    (( ${#pids[@]} == 0 )) && return 0
+    for pid in "${pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
+    sleep 0.5
+  done
+  printf '  dhcpcd is still running on %s; stop it before the DHCP service can own the lease.\n' "$iface" >&3
+  return 1
+}
+
 request_dhcp_lease() {
   local iface=$1
   if command -v dhcpcd >/dev/null; then
@@ -700,13 +717,11 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 DHCP_SERVICE
-  # Stop only the selected interface's standalone client before systemd owns it.
-  case "$DHCP_CLIENT" in
-    dhcpcd) run 'Stop bootstrap DHCP client' dhcpcd -4 -x "$NETWORK_IFACE" || true;;
-    dhclient) run 'Stop bootstrap DHCP client' dhclient -4 -x "$NETWORK_IFACE" || true;;
-  esac
-  # The service's dhcpcd would only forward to a daemon that is still shutting down.
-  wait_for_dhcpcd_exit || true
+  # Stop the selected interface's standalone clients before systemd owns it.
+  if [[ "$DHCP_CLIENT" == dhclient ]]; then
+    run 'Stop bootstrap DHCP client' dhclient -4 -x "$NETWORK_IFACE" || true
+  fi
+  run 'Stop bootstrap DHCP client' stop_uplink_dhcp_clients "$NETWORK_IFACE"
   if [[ -n "$DHCP_DNS" ]]; then
     # dhcpcd rewrites resolv.conf on renewal; pin the manual name server for this interface.
     touch /etc/dhcpcd.conf

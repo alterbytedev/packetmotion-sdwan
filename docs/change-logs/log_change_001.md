@@ -1843,3 +1843,12 @@ Task files (including documentation/evidence and tests):
 - UI/network impact: a retry on a healthy DHCP uplink now changes nothing and returns quickly. Failed retries no longer drop the existing address.
 - Risks/rollback: An address from a non-DHCP source is accepted when a daemon is running; the FRR static cleanup runs before the lease request, which limits this. `git revert` the change.
 - Next: On the lab VM, run retry with DHCP active (expect immediate success) and with DHCP stopped (expect a lease or a clean retry menu).
+## BOOTSTRAP-V1.8-DHCP-OWNER-001 — 2026-10-28 — Claude Code
+
+- Status: COMPLETE (script/test only; lab rerun pending).
+- Summary: On a host where a dhcpcd manager (`dhcpcd: ens3 [ip4] [ip6]`) from an earlier run kept the lease, `packetmotion-dhcp.service` only forwarded its command and exited 0 (journal: "sending commands to dhcpcd process", then "Deactivated successfully"), so the service never owned the lease. `dhcpcd -x` did not stop that manager. Fix: the install step now stops every dhcpcd process for the uplink (`stop_uplink_dhcp_clients`: `-x`, then SIGTERM to `^dhcpcd: <iface> ` processes, bounded wait) and fails the install if one survives, before the service is started.
+- Files: `sdwan-edge/sdwan-provisioning-scripts/packetmotion-fabric-bootstrap-v1.8.sh`; `tests/bootstrap-interface-names.test.mjs`; this log.
+- Checks: `bash -n` PASS; `node --test tests/bootstrap-interface-names.test.mjs` PASS (13/13). `stop_uplink_dhcp_clients` run with stubs in scratchpad: running manager terminated; nothing running returns 0; a manager that does not stop returns 1. UNVERIFIED: real SIGTERM of the live manager on the failing host, and whether the lease survives the handover.
+- UI/network impact: the install briefly stops the uplink's DHCP manager, so SSH over that interface may drop; the service then re-acquires the lease. Installs with a surviving manager stop with an error instead of starting a service that cannot own the lease.
+- Risks/rollback: SIGTERM to a DHCP manager releases its address if it runs without `-p`; the service re-requests it. Rollback: `git revert` the change, or `systemctl stop packetmotion-dhcp` and restart the old manager manually.
+- Next: On the lab VM, verify `pgrep -a dhcpcd` shows exactly one `dhcpcd: <iface>` process owned by the service after install, and that a reboot keeps the lease.

@@ -86,3 +86,10 @@ test('DHCP retry keeps a healthy lease instead of releasing it first', () => {
   assert.ok(request, 'request_dhcp_lease not found');
   assert.ok(request.indexOf('dhcpcd_running && ') < request.indexOf('stop_dhcp_client "$iface"'));
 });
+
+test('DHCP service starts only after every dhcpcd manager for the uplink has stopped', () => {
+  const at = (needle) => script.indexOf(needle);
+  assert.ok(at('stop_uplink_dhcp_clients "$NETWORK_IFACE"') > 0);
+  assert.ok(at('stop_uplink_dhcp_clients "$NETWORK_IFACE"') < at('run \'Start uplink DHCP client\''));
+  assert.match(script, /pgrep -f "\^dhcpcd: \$iface "/);
+});
