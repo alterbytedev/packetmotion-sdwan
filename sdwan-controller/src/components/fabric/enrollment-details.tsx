@@ -31,7 +31,7 @@ export function EnrollmentInstructions({
     : null;
   const needsServerCaPin = allowHttp && !local;
   const installCommand = origin
-    ? `curl -fsSLo install.sh ${origin}/fabric/edge.sh && printf '%s\\n' '${enrollment.token}' | sudo bash install.sh --controller ${origin}${allowHttp ? ' --allow-insecure-local' : ''}${serverCaSha256 ? ` --server-ca-sha256 ${serverCaSha256}` : ''}${enrollment.nodeId ? ` --expected-node-id ${enrollment.nodeId}` : ''} --enable-wireguard --token-stdin`
+    ? `curl -fsSL ${origin}/fabric/edge.sh | sudo bash -s -- --controller ${origin}${allowHttp ? ' --allow-insecure-local' : ''}${serverCaSha256 ? ` --server-ca-sha256 ${serverCaSha256}` : ''}${enrollment.nodeId ? ` --expected-node-id ${enrollment.nodeId}` : ''}`
     : '';
   return (
     <section
@@ -89,8 +89,8 @@ sudo journalctl -u fabric-agent -n 50 --no-pager`}</pre>
       {origin ? (
         <>
           <p className="text-xs text-muted-foreground">
-            Copy and run this once on the Debian device. The one-time token is piped through
-            standard input and does not appear in shell history or process arguments.
+            Copy and run this once on the Debian device. The installer then asks you to paste the
+            one-time token (hidden), so the token never appears in shell history or process arguments.
           </p>
           {allowHttp && <p className="text-xs font-medium text-amber-800 dark:text-amber-300">HTTP is unencrypted. Use this only on an isolated, trusted lab network.</p>}
           {needsServerCaPin && !serverCaSha256 ? (
@@ -102,7 +102,7 @@ sudo journalctl -u fabric-agent -n 50 --no-pager`}</pre>
           )}
           <p className="text-xs text-muted-foreground">
             The installer verifies the signed agent release, pins and installs the controller CA
-            when configured, enrolls with the one-time token, and starts the systemd service. The agent connects outbound; no
+            when configured, enrolls with the one-time token, starts the systemd service and enables local WireGuard apply so deployed tunnels come up without a second step. The agent connects outbound; no
             inbound port is needed.
           </p>
         </>

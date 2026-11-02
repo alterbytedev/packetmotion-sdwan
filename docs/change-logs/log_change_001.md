@@ -1930,3 +1930,61 @@ Task files (including documentation/evidence and tests):
 - Checks: `bash -n` PASS; `node --test tests/controller-setup.test.mjs` 17/17 PASS; existing bootstrap/change-log tests 17/17 PASS; URL encoding round-trip of `p@ss:w/rd#1` PASS; connectivity snippet against the local PostgreSQL PASS (reported superuser, as expected for the postgres role). UNVERIFIED: verify-full against a real TLS PostgreSQL, full non-dry-run install.
 - Risks/rollback: git revert; no host state changed by this edit.
 - Next: disposable-VM run in lab then production.
+## README-RUNBOOK-001 — 2026-11-02 — Claude Code
+
+- Status: COMPLETE (docs only).
+- Summary: README "Getting started" replaced with a phased from-scratch runbook (clone, controller setup script, optional edge bootstrap, register device, install agent, verify, troubleshoot, update) plus condensed development setup.
+- Files: README.md.
+- Checks: diff review only; commands cross-checked against setup-controller.sh usage, edge.sh flags, controller-installation.md and agent-installation.md. No script executed; UNVERIFIED on a clean host. Repository URL left as a placeholder.
+- Risks/rollback: docs only; git revert.
+- Next: validate the runbook end to end on disposable Debian VMs.
+## README-RUNBOOK-002 — 2026-11-02 — Claude Code
+
+- Status: COMPLETE (docs only).
+- Summary: README runbook now has explicit phases: controller one-time settings, onboard Hub first, onboard each Edge, activate tunnels (--enable-wireguard re-run), optional LAN/BGP.
+- Files: README.md.
+- Checks: diff review; steps cross-checked against wireguard-tunnels.md, routed-lan.md, agent-installation.md. Not run on a clean host (UNVERIFIED). Re-run of installer with --enable-wireguard per edge.sh flag and docs; not executed.
+- Risks/rollback: docs only; git revert.
+- Next: validate on disposable VMs.
+## README-RUNBOOK-003 — 2026-11-02 — Claude Code
+
+- Status: COMPLETE (docs only).
+- Summary: README runbook sequence fixes: host bootstrap is the first step of the Hub and Edge phases, tunnel activation must be done on both ends, lab HTTP setting step added. Confirmed signed releases and edge.sh are committed under sdwan-controller/public/fabric, so a fresh clone serves them.
+- Files: README.md.
+- Checks: diff review only; not run on a clean host (UNVERIFIED).
+- Risks/rollback: docs only; git revert.
+- Next: validate on disposable VMs.
+## README-RUNBOOK-004 — 2026-11-02 — Claude Code
+
+- Status: COMPLETE (docs only).
+- Summary: README Phase 4 step 3 now shows the UI-generated command with --enable-wireguard --token-stdin (matches enrollment-details.tsx); Phase 6 reduced to a fallback for devices enrolled without the flag.
+- Files: README.md.
+- Checks: diff review only; cross-checked enrollment-details.tsx and edge.sh. Not run on a clean host (UNVERIFIED).
+- Risks/rollback: docs only; git revert.
+- Next: validate on disposable VMs.
+## INSTALLER-AUTO-WG-001 — 2026-11-02 — Claude Code
+
+- Status: COMPLETE for source/docs; real Debian install UNVERIFIED.
+- Summary: edge.sh (sdwan-edge/install and public/fabric copies) now enables local WireGuard apply by default (`--management-only` opts out; `--enable-wireguard` accepted as no-op). Token is prompted hidden on /dev/tty unless `--token-stdin`. Add device and Upgrade agent UI commands no longer contain the token or `--enable-wireguard`; they are `curl ... | sudo bash -s -- --controller ...`.
+- Files: sdwan-edge/install/edge.sh; sdwan-controller/public/fabric/edge.sh; src/components/fabric/enrollment-details.tsx, agent-upgrade.tsx; tests/installer-identity.test.mjs (title); README.md; docs/operations/agent-installation.md, wireguard-tunnels.md.
+- Checks: bash -n both scripts PASS; installer-identity + installer-reset node tests 18/18 PASS; npm run typecheck PASS; npm run lint PASS. npm run build failed in static page generation (cause not diagnosed; a Next.js dev server / .env.local may be involved); browser/visual tests not run.
+- Risks: behavior change, activation is now default (grants CAP_NET_ADMIN drop-in on every install); `curl | bash` needs a TTY for the prompt. public/fabric/edge.sh is CI-generated from the template, so the next release regenerates it from the same edit.
+- Rollback: git revert.
+- Next: disposable-VM run of Hub+Edge onboarding; browser test of Add device panel.
+## INSTALLER-AUTO-WG-001 correction — 2026-11-02
+
+- npm run build failure cause: Next.js 16.4.0 SecurityFatalError (known-vulnerability gate), unrelated to this change; compile and TypeScript steps passed.
+## 2026-11-02 — Tighten root .gitignore
+
+- Status: done (no tracked files changed; no runtime or product behavior affected).
+- Scope: root `.gitignore` only.
+- Scan result: all generated outputs present on disk (`sdwan-controller/node_modules`, `.next*`, `test-results`, `tsbuildinfo`, `next-env.d.ts`, `.pki`, `.env*`, `.claude/codebase-structure.xml`, `.append.lock`) were already ignored; no untracked-but-unignored files existed.
+- Changed:
+  - Removed `**/node_modules/**/*.png` (redundant with `node_modules/`).
+  - Added `*.log` (no tracked `.log` files; Next.js writes `dev/logs/next-development.log` into `.next*` dirs).
+  - Added `.claude/settings.local.json` (per-user Claude Code settings). Shared `.claude/` config stays versionable.
+- Verified: `git check-ignore` matches new rules; `git ls-files -ci --exclude-standard` shows only the 55 pre-existing tracked evidence PNGs under `docs/evidence/` (tracked before the ignore rule existed; not untracked by this change).
+- Not changed (needs owner decision): those 55 PNGs; tracked `mynotes.txt` (personal shell notes); nested `.gitignore` files in `sdwan-controller/` and `sdwan-edge/` (duplicate root rules, left as scoped files).
+- Risks: `*.log` would hide any future intentionally committed log; none exist today.
+- Rollback: `git checkout -- .gitignore`.
+- Next step: decide whether to `git rm --cached` the evidence PNGs (they stay on disk) and whether `mynotes.txt` should be removed from the repo.

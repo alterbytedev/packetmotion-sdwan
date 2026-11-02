@@ -15,7 +15,6 @@ Thumbs.db
 
 # Node.js dependencies and package manager logs
 node_modules/
-**/node_modules/**/*.png
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
@@ -51,11 +50,12 @@ test-results/
 private-state/
 *.key
 
-# Local databases and transient files
+# Local databases, logs and transient files
 *.sqlite
 *.sqlite3
 *.db
 *.tmp
+*.log
 
 # Screenshots and image captures stay local; use text evidence in Git.
 /docs/evidence/**/*.png
@@ -73,3 +73,5 @@ private-state/
 
 # Local AI navigation snapshot (regenerate with: npx repomix)
 .claude/codebase-structure.xml
+# Per-user Claude Code settings; shared .claude/ config stays versioned
+.claude/settings.local.json

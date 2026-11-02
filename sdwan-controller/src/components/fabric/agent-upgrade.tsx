@@ -12,7 +12,7 @@ export function AgentUpgrade({ releases }: { releases: AgentRelease[] }) {
   const [origin, setOrigin] = useState('');
   useEffect(() => setOrigin(window.location.origin), []);
   const command = version && origin && /^\d+\.\d+\.\d+$/.test(version)
-    ? `curl -fsSL ${origin}/fabric/edge.sh | sudo bash -s -- --controller ${origin} --version ${version} --enable-wireguard`
+    ? `curl -fsSL ${origin}/fabric/edge.sh | sudo bash -s -- --controller ${origin} --version ${version}`
     : '';
   async function copyCommand() {
     try {

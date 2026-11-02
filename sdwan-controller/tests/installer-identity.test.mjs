@@ -42,7 +42,7 @@ for (const file of ['../sdwan-edge/install/edge.sh', 'public/fabric/edge.sh']) {
 }
 
 for (const file of ['../sdwan-edge/install/edge.sh', 'public/fabric/edge.sh']) {
-  test(`${file} runs local WireGuard activation only when requested and never fails the install`, () => {
+  test(`${file} runs local WireGuard activation unless --management-only and never fails the install`, () => {
     const fn = readFileSync(file, 'utf8').match(/enable_wireguard\(\) \{[\s\S]*?\n\}/)?.[0];
     assert.ok(fn);
     function run(flag, version, enableExit) {

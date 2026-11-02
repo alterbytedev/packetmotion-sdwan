@@ -9,7 +9,7 @@ SERVER_CA_SHA256=''
 TOKEN_STDIN=0
 REQUESTED_VERSION=''
 EXPECTED_NODE_ID=''
-ENABLE_WIREGUARD=0
+ENABLE_WIREGUARD=1
 STAGE=preflight
 RESET_REQUIRED=0
 RESET_ACTIVE=0
@@ -43,10 +43,10 @@ read_enrollment_token() {
   if [[ $TOKEN_STDIN -eq 1 ]]; then
   IFS= read -r TOKEN || fail 'unable to read enrollment token from stdin'
   elif [[ -r /dev/tty ]]; then
-  IFS= read -r -s -p 'Enrollment token: ' TOKEN </dev/tty || fail 'unable to read enrollment token'
+  IFS= read -r -s -p 'Paste the one-time enrollment token from the dashboard (input hidden): ' TOKEN </dev/tty || fail 'unable to read enrollment token'
   printf '\n' >/dev/tty
   else
-  fail 'interactive terminal required to enter enrollment token'
+  fail 'no terminal available to prompt for the enrollment token; run from an interactive shell or add --token-stdin and pipe the token'
   fi
   [[ "$TOKEN" =~ ^pm_enroll_[a-f0-9]{64}$ ]] || { unset TOKEN; fail 'enrollment token format is invalid'; }
 }
@@ -184,8 +184,8 @@ cleanup() {
   [[ -z "$ENROLL_CA" ]] || rm -f -- "$ENROLL_CA"
 }
 trap cleanup EXIT
-# Optional local opt-in, run on this appliance by the operator who passed
-# --enable-wireguard. Failure never undoes enrollment or the upgrade: the
+# Local WireGuard opt-in, run on this appliance by the operator running the
+# installer; on by default, skipped with --management-only. Failure never undoes enrollment or the upgrade: the
 # management-only service stays running and the manual command is printed.
 enable_wireguard() {
   [[ $ENABLE_WIREGUARD -eq 1 ]] || return 0
@@ -205,7 +205,8 @@ while (($#)); do
     --server-ca-sha256) (($# >= 2)) || fail 'missing server CA SHA-256 fingerprint'; SERVER_CA_SHA256=$2; shift 2 ;;
     --token-stdin) TOKEN_STDIN=1; shift ;;
     --expected-node-id) (($# >= 2)) || fail 'missing expected device ID'; EXPECTED_NODE_ID=$2; shift 2 ;;
-    --enable-wireguard) ENABLE_WIREGUARD=1; shift ;;
+    --enable-wireguard) ENABLE_WIREGUARD=1; shift ;; # default; accepted for older commands
+    --management-only) ENABLE_WIREGUARD=0; shift ;;
     --version) (($# >= 2)) || fail 'missing agent version'; REQUESTED_VERSION=$2; shift 2 ;;
     *) fail 'unknown installer option' ;;
   esac
