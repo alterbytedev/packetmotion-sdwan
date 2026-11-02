@@ -38,6 +38,7 @@ This index groups the product and operational material for operators, reviewers,
 - [Controller development guide](../../sdwan-controller/README.md)
 - [Go agent guide](../../sdwan-edge/README.md)
 - [HTTPS/mTLS ingress guide](../../deploy/proxy/README.md)
+- [Controller node installation (interface selection, lab/production, certificates)](../operations/controller-installation.md)
 
 ## Evidence and history
 

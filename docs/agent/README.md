@@ -30,6 +30,7 @@ Use this index to find the repository's working rules and implementation referen
 - [Management communication and recovery](../operations/management-channel.md)
 - [Agent control-channel target](../architecture/agent-control-channel.md)
 - [Edge and Hub agent installation](../operations/agent-installation.md)
+- [Controller node installation](../operations/controller-installation.md)
 - [TCP/UDP network communication matrix](../operations/communication-matrix.md)
 - [Runtime error capture and troubleshooting](../operations/runtime-error-troubleshooting.md)
 - [API contract](../../api/openapi.yaml)

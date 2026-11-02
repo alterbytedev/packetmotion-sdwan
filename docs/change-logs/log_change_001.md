@@ -1881,3 +1881,29 @@ Task files (including documentation/evidence and tests):
 - Checks: tsc PASS; npm test 84 pass, 2 pre-existing failures (desired route tests 18/19, also failing without these changes). UNVERIFIED: browser/visual.
 - Risks/rollback: git revert.
 - Next: view the panel on a lab controller.
+## CONTROLLER-SETUP-001 — 2026-11-02 — Claude Code
+
+- Status: COMPLETE for script/tests/docs; NOT run against a real install (see UNVERIFIED).
+- Summary: new `deploy/controller/setup-controller.sh` provisions a controller node: scans IPv4 interfaces/addresses and lets the operator pick the serving address (NGINX binds only to it), lab vs production, `private-ca` (self-signed, existing pin flow) vs `custom` (public/enterprise cert, validated), migrations, first superadmin only if none exists, production build, systemd service on loopback, post-install verification (ready, HTTPS, agent API 403 without client cert, installer over HTTPS). `deploy/proxy/setup-nginx.sh` stays the owner of NGINX/PKI/env and gains backward-compatible `--listen`, `--tls-cert/--tls-key`, `--no-http-enroll`, `--reissue-leaf`; it also clears a stale `CONTROLLER_AGENT_CA_SHA256` for custom certs and restores the previous site file when `nginx -t` fails.
+- Onboarding safety: default setup-nginx.sh output is byte-identical to HEAD (checked by diff of the rendered site file). Agents append a pinned CA to the system roots, so private-CA to public cert keeps enrolled edges working; host/IP change and public to private-CA are surfaced as risks requiring acceptance.
+- Files: deploy/controller/setup-controller.sh (new); deploy/proxy/setup-nginx.sh; deploy/proxy/README.md; docs/operations/controller-installation.md (new); docs/README.md; docs/agent/README.md; docs/human/README.md; tests/controller-setup.test.mjs (new).
+- Checks run: `bash -n` both scripts PASS; `node --test tests/controller-setup.test.mjs` 13/13 PASS (interface scan fixture, mode policy, cert key/host/expiry/CA-leaf/untrusted-chain checks, nginx rendering); existing bootstrap and change-log tests 17/17 PASS; real `--dry-run` on this host PASS (port 3000 held by the dev server is reported as a blocker). Found and fixed during testing: python `is_private` misclassified reserved ranges.
+- UNVERIFIED: any non-dry-run execution (no clean Debian host used; this host runs a live dev controller), systemd unit behaviour, non-root service file permissions, edge enrollment through a public certificate, ACME (not implemented).
+- Risks/rollback: setup-nginx.sh edits affect the live ingress path; rollback `git revert` of this change. Applying the script restarts NGINX config (reload), rewrites `.env.local` ingress keys (timestamped `.before-nginx-*` backup kept), and writes `/etc/systemd/system/packetmotion-controller.service`, an nginx.service drop-in and `/etc/packetmotion-fabric/controller-setup.conf`.
+- Next: run on a disposable Debian VM in lab then production (custom cert) mode, enroll a lab edge through each, then decide on ACME and an app-level production guard for the insecure-HTTP allowlist.
+## CONTROLLER-SETUP-002 — 2026-11-02 — Claude Code
+
+- Status: COMPLETE for script/tests/docs; Docker/PostgreSQL install path NOT run.
+- Summary: `setup-controller.sh` offers, in lab mode only and only when no DATABASE_URL is configured, to install Docker (Debian docker.io) and run PostgreSQL 17 in container `sdwan-postgres` on 127.0.0.1:5432 with a random password written to .env.local only. Flags `--setup-postgres` / `--no-setup-postgres`. Blockers: port 5432 busy, same-name container exists. Rejected in production and when a DATABASE_URL already exists. Also fixed: a DATABASE_URL is now written when .env.local exists without one.
+- Files: deploy/controller/setup-controller.sh; docs/operations/controller-installation.md; tests/controller-setup.test.mjs.
+- Checks: `bash -n` PASS; `node --test tests/controller-setup.test.mjs` 15/15 PASS (dry-run planning, lab-only, conflict cases). UNVERIFIED: real docker install/run, readiness wait, migrations against the new container.
+- Risks/rollback: installs a package and starts a container on the host; rollback `docker rm -f sdwan-postgres` (data volume sdwan-postgres-data kept until removed) and git revert.
+- Next: run lab mode on a disposable Debian VM with no Docker installed.
+## CONTROLLER-SETUP-003 — 2026-11-02 — Claude Code
+
+- Status: COMPLETE for script/tests/docs; connection test verified only against this host's existing PostgreSQL (read-only SELECT), not an install run.
+- Summary: `setup-controller.sh` collects PostgreSQL host/port/database/user/password separately (prompts, `--db-*`, `--db-password-file`, `FABRIC_DB_PASSWORD`) and builds the percent-encoded URL itself; `--database-url` kept. TLS `disable|verify-full` (+ `--db-ssl-ca`), verify-full default for remote hosts in production. After `npm ci` and before any write/migration it runs `SELECT` and aborts with a clear message; warns when the role is a superuser. Risks to accept: postgres user in production, cleartext to a remote host, group/world-readable password file. No database/role is created. Lab Postgres helper unchanged.
+- Files: deploy/controller/setup-controller.sh; docs/operations/controller-installation.md; tests/controller-setup.test.mjs.
+- Checks: `bash -n` PASS; `node --test tests/controller-setup.test.mjs` 17/17 PASS; existing bootstrap/change-log tests 17/17 PASS; URL encoding round-trip of `p@ss:w/rd#1` PASS; connectivity snippet against the local PostgreSQL PASS (reported superuser, as expected for the postgres role). UNVERIFIED: verify-full against a real TLS PostgreSQL, full non-dry-run install.
+- Risks/rollback: git revert; no host state changed by this edit.
+- Next: disposable-VM run in lab then production.
