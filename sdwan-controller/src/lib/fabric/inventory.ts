@@ -49,13 +49,23 @@ const nodeColumns = `
        ELSE 'management-connected'
   END AS "connectionStatus"`;
 
+// Kept out of nodeColumns so the connected-count query does not pay for it.
+const sdwanColumn = `,
+  (SELECT json_build_object(
+     'applyStatus', o.status, 'observedRevision', o.revision, 'observedAt', o.received_at::text,
+     'matchingChecksum', o.checksum=dc.checksum, 'handshakes', o.handshakes,
+     'observationFresh', o.received_at > now()-make_interval(secs=>GREATEST(120,3*COALESCE((dc.payload::jsonb->>'pollIntervalSeconds')::int,30))),
+     'tunnelCount', COALESCE(jsonb_array_length(dc.payload::jsonb->'wireguard'->'tunnels'),0))
+   FROM (SELECT checksum,payload FROM desired_configs WHERE node_id=n.id ORDER BY revision DESC LIMIT 1) dc
+   LEFT JOIN wireguard_observed o ON o.node_id=n.id) AS sdwan`;
+
 export async function listInventory(actor: Actor | null): Promise<Inventory> {
   authorize(actor);
   const pool = getDatabase();
   const [sites, nodes] = await Promise.all([
     pool.query<Site>(`SELECT ${siteColumns} FROM sites ORDER BY name, id`),
     pool.query<NodeRecord>(
-      `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id = n.site_id WHERE n.archived_at IS NULL ORDER BY s.name, n.name, n.id`,
+      `SELECT ${nodeColumns}${sdwanColumn} FROM nodes n JOIN sites s ON s.id = n.site_id WHERE n.archived_at IS NULL ORDER BY s.name, n.name, n.id`,
     ),
   ]);
   return { sites: sites.rows, nodes: nodes.rows };
@@ -170,7 +180,7 @@ export async function createNode(
       'Initial desired configuration published.', serialized);
     await auditCreation(client, fresh, 'config.published', id);
     const result = await client.query<NodeRecord>(
-      `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id = n.site_id WHERE n.id = $1`,
+      `SELECT ${nodeColumns}${sdwanColumn} FROM nodes n JOIN sites s ON s.id = n.site_id WHERE n.id = $1`,
       [id],
     );
     const enrollment = await issueToken(client, fresh, id);
@@ -212,7 +222,7 @@ export async function listDevices(
     const total = count.rows[0].total;
     const currentPage = Math.min(page, Math.max(1, Math.ceil(total / pageSize)));
     const result = await client.query<NodeRecord>(
-      `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id=n.site_id ${filter} ORDER BY lower(n.name), n.id LIMIT $2 OFFSET $3`,
+      `SELECT ${nodeColumns}${sdwanColumn} FROM nodes n JOIN sites s ON s.id=n.site_id ${filter} ORDER BY lower(n.name), n.id LIMIT $2 OFFSET $3`,
       [pattern, pageSize, (currentPage - 1) * pageSize],
     );
     await client.query('COMMIT');
@@ -229,7 +239,7 @@ export async function getDevice(actor: Actor | null, id: string): Promise<NodeRe
   authorize(actor);
   nodeIdInput(id);
   const result = await getDatabase().query<NodeRecord>(
-    `SELECT ${nodeColumns} FROM nodes n JOIN sites s ON s.id=n.site_id WHERE n.id=$1 AND n.archived_at IS NULL`,
+    `SELECT ${nodeColumns}${sdwanColumn} FROM nodes n JOIN sites s ON s.id=n.site_id WHERE n.id=$1 AND n.archived_at IS NULL`,
     [id],
   );
   if (!result.rows[0]) throw new FabricError(404, 'Device not found.');

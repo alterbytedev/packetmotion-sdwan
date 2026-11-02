@@ -53,6 +53,7 @@ type Engine struct {
 	NodeID        string
 	Run           Runner
 	AllowRouting  bool
+	AllowTransit  bool
 	LANInterface  string
 	ManagementIPs []string
 }
@@ -150,6 +151,11 @@ func Validate(plan Plan) error {
 	}
 	if err := validateBGP(plan); err != nil {
 		return err
+	}
+	if plan.Routing != nil {
+		if err := validateTransit(*plan.Routing); err != nil {
+			return err
+		}
 	}
 	for _, tunnel := range plan.Tunnels {
 		if len(tunnel.AllowedPrefixes) > 0 && (plan.Routing == nil || plan.Routing.BGP == nil) {
@@ -313,7 +319,7 @@ func writePlan(directory, name string, plan Plan) error {
 }
 func (e Engine) replace(ctx context.Context, plan Plan, key string) error {
 	if len(plan.Tunnels) > 0 || plan.Routing != nil {
-		if err := e.ensureIsolation(ctx); err != nil {
+		if err := e.ensureIsolation(ctx, plan); err != nil {
 			return err
 		}
 	}
@@ -461,7 +467,7 @@ func (e Engine) applyLocked(ctx context.Context, plan Plan, confirm func(context
 	}
 	if bytes.Equal(before, after) && present && lanPresent && bgpPresent {
 		if len(plan.Tunnels) > 0 || plan.Routing != nil {
-			return e.ensureIsolation(ctx)
+			return e.ensureIsolation(ctx, plan)
 		}
 		return nil
 	}

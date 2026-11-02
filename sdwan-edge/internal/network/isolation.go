@@ -10,10 +10,20 @@ import (
 // Isolate only this node's interface group at the forward hook. Input/output
 // management traffic and forwarding through unrelated interfaces are unchanged.
 // The nft transaction replaces only a table bearing our exact ownership comment.
-func (e Engine) ensureIsolation(ctx context.Context) error { return e.reconcileIsolation(ctx, false) }
-func (e Engine) removeIsolation(ctx context.Context) error { return e.reconcileIsolation(ctx, true) }
-func (e Engine) reconcileIsolation(ctx context.Context, remove bool) error {
-	rules := fmt.Sprintf(" meta iifgroup %s drop;\n meta oifgroup %s drop;\n", e.group(), e.group())
+func (e Engine) ensureIsolation(ctx context.Context, plan Plan) error {
+	return e.reconcileIsolation(ctx, plan, false)
+}
+func (e Engine) removeIsolation(ctx context.Context) error {
+	return e.reconcileIsolation(ctx, Plan{}, true)
+}
+func (e Engine) reconcileIsolation(ctx context.Context, plan Plan, remove bool) error {
+	rules := ""
+	// Allow rules apply only with the local opt-in; recovering a journaled plan
+	// after the flag is removed falls back to the blanket denial.
+	if e.AllowTransit && plan.Routing != nil {
+		rules = renderTransitRules(*plan.Routing, e.group())
+	}
+	rules += fmt.Sprintf(" meta iifgroup %s drop;\n meta oifgroup %s drop;\n", e.group(), e.group())
 	return reconcileOwnedIsolation(ctx, e.Run, "pmwg"+e.group(), "PacketMotion WireGuard "+e.group(), rules, remove)
 }
 

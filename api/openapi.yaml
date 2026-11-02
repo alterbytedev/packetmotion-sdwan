@@ -2056,6 +2056,82 @@
         }
       }
     },
+    "/api/operator/controller-settings/transit": {
+      "get": {
+        "operationId": "readTransitPolicy",
+        "description": "Signed-in operator read. Returns deployed rules, the unpublished draftRules (or null), version and the saved device lanPrefixes rules may name.",
+        "security": [{ "operatorSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Policy read."
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "415": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      },
+      "put": {
+        "operationId": "saveTransitDraft",
+        "description": "Superadmin only. Same-origin bounded JSON. Saves an unpublished draft; nothing is published to devices until deployment. Rules may name only saved device LAN prefixes. Rule IDs are assigned from list order. Rejects stale versions; audits transaction.",
+        "security": [{ "operatorSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Draft saved."
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "415": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TransitPolicyInput" }
+            }
+          }
+        }
+      }
+    },
+    "/api/operator/controller-settings/transit/deploy": {
+      "post": {
+        "operationId": "deployTransitDraft",
+        "description": "Superadmin only. Promotes the saved draft to the deployed rules and publishes a new desired revision (schemaVersion 4 when rules apply) to every device with a LAN profile. A repeat call with no draft returns deployed false. Devices apply rules only with local --enable-transit; others reject the revision.",
+        "security": [{ "operatorSession": [] }],
+        "responses": {
+          "200": {
+            "description": "Deployed, or no unpublished changes."
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "413": { "$ref": "#/components/responses/Error" },
+          "415": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["expectedVersion"],
+                "properties": { "expectedVersion": { "type": "integer", "minimum": 0 } }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/operator/nodes/{id}/lan": {
       "parameters": [
         {
@@ -3242,7 +3318,8 @@
             "enum": [
               1,
               2,
-              3
+              3,
+              4
             ]
           },
           "deviceKind": {
@@ -3300,7 +3377,7 @@
             "if": {
               "properties": {
                 "schemaVersion": {
-                  "const": 3
+                  "minimum": 3
                 }
               }
             },
@@ -3610,6 +3687,12 @@
               "type": "string"
             }
           },
+          "transit": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "Present only with schemaVersion 4. Agent applies it only with local --enable-transit.",
+            "items": { "$ref": "#/components/schemas/TransitRule" }
+          },
           "bgp": {
             "type": "object",
             "additionalProperties": false,
@@ -3865,6 +3948,39 @@
           "advertisedPrefix": {
             "type": "string",
             "description": "Canonical IPv4 subnet; must exactly match the address network."
+          }
+        }
+      },
+      "TransitRule": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source", "destination", "protocol"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,35}$" },
+          "source": { "type": "string", "description": "Canonical IPv4 CIDR of a saved device LAN." },
+          "destination": { "type": "string", "description": "Canonical IPv4 CIDR of a different saved device LAN." },
+          "protocol": { "type": "string", "enum": ["any", "tcp", "udp", "icmp"] }
+        }
+      },
+      "TransitPolicyInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["expectedVersion", "rules"],
+        "properties": {
+          "expectedVersion": { "type": "integer", "minimum": 0 },
+          "rules": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "destination", "protocol"],
+              "properties": {
+                "source": { "type": "string" },
+                "destination": { "type": "string" },
+                "protocol": { "type": "string", "enum": ["any", "tcp", "udp", "icmp"] }
+              }
+            }
           }
         }
       },

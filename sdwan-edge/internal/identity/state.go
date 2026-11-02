@@ -16,6 +16,7 @@ import (
 type State struct {
 	WireGuardEnabled       bool   `json:"-"`
 	RoutingEnabled         bool   `json:"-"`
+	TransitEnabled         bool   `json:"-"`
 	LANInterface           string `json:"-"`
 	WireGuardPublicKey     string `json:"wireguardPublicKey,omitempty"`
 	PendingAcknowledgement bool   `json:"pendingAcknowledgement"`

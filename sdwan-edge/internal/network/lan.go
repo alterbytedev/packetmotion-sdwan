@@ -17,9 +17,10 @@ import (
 // Routing is a typed bundle. Later milestones add only validated BGP peers and
 // permissions; arbitrary CLI/configuration text is never accepted from a server.
 type Routing struct {
-	BGP               *BGP     `json:"bgp,omitempty"`
-	LAN               LAN      `json:"lan"`
-	ProtectedPrefixes []string `json:"protectedPrefixes"`
+	BGP               *BGP          `json:"bgp,omitempty"`
+	LAN               LAN           `json:"lan"`
+	ProtectedPrefixes []string      `json:"protectedPrefixes"`
+	Transit           []TransitRule `json:"transit,omitempty"`
 }
 type LAN struct {
 	InterfaceName    string `json:"interfaceName"`

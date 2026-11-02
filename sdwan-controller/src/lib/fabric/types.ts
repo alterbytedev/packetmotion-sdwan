@@ -7,6 +7,16 @@ export type Site = {
   lanPrefix: string | null;
   createdAt: string;
 };
+// Latest desired-config tunnel count and WireGuard observation; null before any revision.
+export type SdwanObservation = {
+  applyStatus: string | null;
+  observedRevision: number | null;
+  observedAt: string | null;
+  matchingChecksum: boolean | null;
+  observationFresh: boolean | null;
+  tunnelCount: number;
+  handshakes: { name: string; lastHandshake: number }[] | null;
+};
 export type NodeRecord = {
   id: string;
   siteId: string;
@@ -19,6 +29,7 @@ export type NodeRecord = {
   lastSeenAt: string | null;
   agentVersion?: string | null;
   telemetryReceivedAt?: string | null;
+  sdwan?: SdwanObservation | null;
   createdAt: string;
 };
 export type Inventory = { sites: Site[]; nodes: NodeRecord[]; total?: number; connected?: number };

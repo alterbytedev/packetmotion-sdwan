@@ -127,7 +127,7 @@ connectivity remain UNVERIFIED until checked there.
 ## Local WireGuard activation after enrollment (0.3.6)
 
 Enrollment and **Save draft → Deploy changes** do not grant local network privileges.
-If Overlay reports **Local activation required**, use the appliance's console:
+If SD-WAN reports **Local activation required**, use the appliance's console:
 
 ```sh
 sudo fabric-agent network enable
@@ -146,4 +146,4 @@ before enabling. Receipt, apply, handshake and tunnel-IP reachability remain sep
 
 ## Interface safe commit increment — 2026-10-22
 
-Agent 0.4.0 adds current interface CIDRs and dedicated static LAN/VLAN safe apply through a locally authorized independent guard. Controller migrations 0022/0023 add candidates and immutable commit history; Underlay row actions offer Save and apply and Edit and retry. WAN/DHCP/gateway/advertisements remain blocked by this adapter, and forwarding stays isolated. Earlier metadata-only descriptions above describe the previous increment. See [interface operations](../operations/interface-management.md) for ownership, activation, recovery and evidence limits.
+Agent 0.4.0 adds current interface CIDRs and dedicated static LAN/VLAN safe apply through a locally authorized independent guard. Controller migrations 0022/0023 add candidates and immutable commit history; Network-tab interface row actions offer Save and apply and Edit and retry. WAN/DHCP/gateway/advertisements remain blocked by this adapter, and forwarding stays isolated. Earlier metadata-only descriptions above describe the previous increment. See [interface operations](../operations/interface-management.md) for ownership, activation, recovery and evidence limits.

@@ -1,3 +1,5 @@
+import type { NodeRecord } from '@/lib/fabric/types';
+
 export type DeploymentDevice = {
   id: string;
   name: string;
@@ -115,4 +117,29 @@ export function deploymentStatus(device: DeploymentDevice, now = Date.now()) {
     // Green only when nothing needs operator attention.
     ok: device.tunnelCount === 0 || recent,
   };
+}
+
+// Header badge: integrated only when the current plan has tunnels, is applied
+// and every tunnel shows a recent handshake.
+export function sdwanIndicator(node: NodeRecord, now = Date.now()) {
+  const sdwan = node.sdwan;
+  if (!sdwan || sdwan.tunnelCount === 0)
+    return { label: 'SD-WAN not configured', tone: 'muted' as const, detail: 'No SD-WAN tunnels are published for this device.' };
+  const status = deploymentStatus(
+    {
+      ...sdwan,
+      id: node.id,
+      name: node.name,
+      kind: node.kind,
+      revoked: node.connectionStatus === 'revoked',
+      lastSeenAt: node.lastSeenAt,
+      revision: node.configRevision,
+      receipt: node.configStatus,
+      online: node.connectionStatus === 'management-connected' || node.connectionStatus === 'syncing',
+    },
+    now,
+  );
+  return status.ok
+    ? { label: 'SD-WAN integrated', tone: 'ok' as const, detail: status.label }
+    : { label: 'SD-WAN pending', tone: 'warn' as const, detail: `${status.label}. ${status.next}` };
 }

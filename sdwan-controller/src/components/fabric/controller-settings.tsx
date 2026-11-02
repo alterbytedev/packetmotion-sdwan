@@ -3,6 +3,7 @@ import { logout } from '@/app/login/actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { RoutingSettings } from './routing-settings';
+import { TransitPolicy } from './transit-policy';
 import { TunnelSettings } from './tunnel-settings';
 import { BrandingSettings } from './branding-settings';
 import { InsecureHttpAllowlistSettings } from './insecure-http-allowlist-settings';
@@ -71,6 +72,7 @@ export function ControllerSettings({
       </Card>
       {role !== 'viewer' && <div className="xl:col-span-2"><OperatorManager role={role} /></div>}
       {isSuperadmin && <div className="xl:col-span-2"><RoutingSettings /></div>}
+      {isSuperadmin && <div className="xl:col-span-2"><TransitPolicy /></div>}
       {isSuperadmin && <div className="xl:col-span-2"><TunnelSettings /></div>}
       {isSuperadmin && <div className="xl:col-span-2"><BrandingSettings /></div>}
       {isSuperadmin && <div className="xl:col-span-2"><InsecureHttpAllowlistSettings /></div>}

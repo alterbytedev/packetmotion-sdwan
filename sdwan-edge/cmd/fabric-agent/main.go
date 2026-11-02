@@ -64,7 +64,7 @@ func execute(args []string, stdout, stderr io.Writer) error {
 	var expected *string
 	var managementDirectory *string
 	var check *bool
-	var local, wireguard, routing, once *bool
+	var local, wireguard, routing, transit, once *bool
 	if command == "enroll" {
 		address = flags.String("controller", "", "controller HTTPS origin")
 		caPath = flags.String("server-ca", "", "optional PEM for a private server CA")
@@ -77,6 +77,7 @@ func execute(args []string, stdout, stderr io.Writer) error {
 		check = flags.Bool("check", false, "check controller authentication without applying configuration")
 	} else {
 		wireguard = flags.Bool("enable-wireguard", os.Getenv("FABRIC_WIREGUARD_ENABLED") == "1", "enable owned WireGuard interface apply (requires NET_ADMIN and isolated validation)")
+		transit = flags.Bool("enable-transit", false, "enable locally authorized controller transit allow rules between approved LANs (requires --enable-routing)")
 		routing = flags.Bool("enable-routing", false, "enable locally authorized LAN address and FRR BGP apply (requires --enable-wireguard and --lan-interface)")
 		lanInterface = flags.String("lan-interface", "", "locally authorized physical LAN interface for routing apply")
 		once = flags.Bool("once", false, "one management cycle")
@@ -139,6 +140,10 @@ func execute(args []string, stdout, stderr io.Writer) error {
 		state.WireGuardEnabled = *wireguard
 		state.RoutingEnabled = *routing
 		state.LANInterface = *lanInterface
+		state.TransitEnabled = *transit
+		if *transit && !*routing {
+			return errors.New("--enable-transit requires --enable-routing")
+		}
 		if *routing && (!*wireguard || *lanInterface == "") {
 			return errors.New("--enable-routing requires --enable-wireguard and --lan-interface")
 		}

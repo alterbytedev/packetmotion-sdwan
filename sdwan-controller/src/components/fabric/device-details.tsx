@@ -26,6 +26,7 @@ import { Modal, ModalFooter } from '@/components/ui/modal';
 import { formatDateTime, formatDate } from '@/lib/date-format';
 import { useControllerTimeZone } from '@/lib/time-zone-context';
 import type { NodeRecord, OperatorRole } from '@/lib/fabric/types';
+import { sdwanIndicator } from '@/lib/fabric/wireguard-deployment-status';
 import { AgentConfiguration } from './agent-configuration';
 import { AgentTelemetry, useAgentTelemetry } from './agent-telemetry';
 import { DeviceConnectionStatus } from './device-connection-status';
@@ -59,13 +60,12 @@ export function DeviceDetails({
   const [renameOpen, setRenameOpen] = useState(false);
   const [name, setName] = useState(node.name);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const tabs = ['Overview', 'Underlay', 'Overlay', 'LAN & Routing', 'Advanced'];
+  const tabs = ['Overview', 'Network', 'SD-WAN', 'Advanced'];
   const tips = [
-    'Start here to check enrollment, controller connectivity, and the latest agent heartbeat.',
-    'Select an interface to configure its IPv4 settings, role and MTU, or manage its VLANs.',
-    'Overlay connects sites through WireGuard. Save a draft, deploy it, then check each peer’s apply and handshake observations.',
-    'Configure the local LAN profile and advertised prefix. Saved settings do not by themselves prove a working BGP session or routed reachability.',
-    'Manage configuration and inspect technical details. A received revision is staged; check Overlay for apply and handshake observations.',
+    'Connection and agent health.',
+    'Set up interfaces, VLANs and the LAN subnet. Saved settings do not prove a working route.',
+    'Connect this device to hubs and deploy tunnels, then check each tunnel’s status.',
+    'Agent settings and technical details.',
   ];
   const tabId = (index: number) => `device-${node.id}-tab-${index}`;
   const panelId = (index: number) => `device-${node.id}-panel-${index}`;
@@ -74,6 +74,13 @@ export function DeviceDetails({
       ? 'border-emerald-600/30 bg-emerald-600/10 text-emerald-800 dark:text-emerald-300'
       : node.connectionStatus === 'revoked'
         ? 'border-rose-600/30 bg-rose-600/10 text-rose-800 dark:text-rose-300'
+        : 'border-muted-foreground/20 bg-muted/60 text-muted-foreground';
+  const sdwan = sdwanIndicator(node);
+  const sdwanTone =
+    sdwan.tone === 'ok'
+      ? 'border-emerald-600/30 bg-emerald-600/10 text-emerald-800 dark:text-emerald-300'
+      : sdwan.tone === 'warn'
+        ? 'border-amber-600/30 bg-amber-600/10 text-amber-800 dark:text-amber-300'
         : 'border-muted-foreground/20 bg-muted/60 text-muted-foreground';
   const lastSeen = node.lastSeenAt ? formatDateTime(node.lastSeenAt, timeZone) : null;
   async function copyDeviceId() {
@@ -181,6 +188,9 @@ export function DeviceDetails({
                 <Badge className="capitalize">{node.kind === 'hub' ? 'Hub' : 'Edge'}</Badge>
                 <Badge className={statusTone}>
                   {connectionStatusLabels[node.connectionStatus]}
+                </Badge>
+                <Badge className={sdwanTone} title={sdwan.detail}>
+                  {sdwan.label}
                 </Badge>
               </div>
               <CardDescription>{node.siteName} · Device details</CardDescription>
@@ -344,7 +354,7 @@ export function DeviceDetails({
                 {node.configStatus === 'received'
                   ? 'received (staged only)'
                   : (node.configStatus ?? 'not-configured')}
-                . Receipt does not confirm tunnel apply or reachability; check Overlay.
+                . Check SD-WAN for tunnel status.
               </p>
             </div>
             <div className="rounded-lg border bg-background p-4">
@@ -387,20 +397,24 @@ export function DeviceDetails({
           <DeviceConnectionStatus nodeId={node.id} />
         </div>
       </section>
-      <section id={panelId(1)} role="tabpanel" aria-labelledby={tabId(1)} hidden={activeTab !== 1}>
+      <section
+        id={panelId(1)}
+        role="tabpanel"
+        aria-labelledby={tabId(1)}
+        hidden={activeTab !== 1}
+        className="space-y-5"
+      >
         <UnderlayInterfaces key={`underlay-${node.id}`} node={node} role={role} telemetry={telemetry} />
+        <LanSettings key={`lan-${node.id}`} node={node} role={role} />
       </section>
       <section id={panelId(2)} role="tabpanel" aria-labelledby={tabId(2)} hidden={activeTab !== 2}>
         <WireguardConnections key={`wireguard-${node.id}`} node={node} role={role} />
       </section>
-      <section id={panelId(3)} role="tabpanel" aria-labelledby={tabId(3)} hidden={activeTab !== 3}>
-        <LanSettings key={`lan-${node.id}`} node={node} role={role} />
-      </section>
       <section
-        id={panelId(4)}
+        id={panelId(3)}
         role="tabpanel"
-        aria-labelledby={tabId(4)}
-        hidden={activeTab !== 4}
+        aria-labelledby={tabId(3)}
+        hidden={activeTab !== 3}
         className="space-y-5"
       >
         <AgentConfiguration key={`config-${node.id}`} inventory={inventory} role={role} />

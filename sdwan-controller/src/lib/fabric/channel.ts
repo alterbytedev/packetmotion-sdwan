@@ -4,7 +4,7 @@ import { getDatabase } from '../db';
 import { FabricError } from './authorization';
 import { mutate } from './inventory';
 import { auditCreation } from './audit';
-import { lockTopology, wireguardPlan } from './wireguard-plan';
+import { lockTopology, wireguardPlan, wireguardSchemaVersion } from './wireguard-plan';
 import { waitForRevision } from './revision-events';
 import { appendCommandEvent, recordCommandPublication } from './command-history';
 import type { Actor } from './types';
@@ -13,7 +13,7 @@ import type { Actor } from './types';
 export { recordHeartbeat, readTelemetry } from './telemetry';
 
 export type DeviceConfig = {
-  schemaVersion: 1 | 2 | 3;
+  schemaVersion: 1 | 2 | 3 | 4;
   wireguard?: Awaited<ReturnType<typeof wireguardPlan>>;
   deviceKind: 'branch' | 'hub';
   mode: 'gateway' | 'subnet-router';
@@ -95,7 +95,7 @@ export async function publishConfig(actor: Actor | null, nodeId: string, value: 
     };
     if (prior.rows[0] && JSON.parse(prior.rows[0].payload).schemaVersion >= 2) {
       payload.wireguard = await wireguardPlan(client, nodeId);
-      payload.schemaVersion = payload.wireguard.routing ? 3 : 2;
+      payload.schemaVersion = wireguardSchemaVersion(payload.wireguard);
     }
     const serialized = JSON.stringify(payload);
     const checksum = createHash('sha256').update(serialized).digest('hex');

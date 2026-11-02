@@ -1881,6 +1881,29 @@ Task files (including documentation/evidence and tests):
 - Checks: tsc PASS; npm test 84 pass, 2 pre-existing failures (desired route tests 18/19, also failing without these changes). UNVERIFIED: browser/visual.
 - Risks/rollback: git revert.
 - Next: view the panel on a lab controller.
+## SDWAN-INDICATOR-001 — 2026-10-29 — Claude Code
+
+- Status: COMPLETE (code/tests; SQL and UI unverified).
+- Summary: Device header shows an SD-WAN badge (integrated / pending / not configured) from latest desired tunnels + WireGuard observation via `sdwanIndicator`; inventory queries return a `sdwan` JSON column (not in the connected-count query). UI term Overlay renamed SD-WAN (tab, tips, tests, docs).
+- Files: types.ts; inventory.ts; wireguard-deployment-status.ts; device-details.tsx; agent-telemetry.tsx; network-configuration-preview.tsx; browser specs; docs; unit test.
+- Checks: tsc PASS; npm test 85 pass, 2 pre-existing failures (18/19). UNVERIFIED: new SQL against PostgreSQL, browser/visual tests (tab rename in specs).
+- Risks/rollback: git revert. Extra subquery per node in inventory reads.
+- Next: run test:integration/test:browser with a database.
+## DEVICE-TABS-001 — 2026-10-29
+- Task: simplify device detail tabs. Merged Underlay + LAN & Routing into one "Network" tab (Interfaces card, then LAN card); tabs now Overview, Network, SD-WAN, Advanced. Shortened tab tips and the Overview revision caveat. No logic, API or data-flow change.
+- Files: device-details.tsx; network-configuration-preview.tsx (tab-name text); browser specs (inventory, network-draft, interface-apply); docs (STATUS, ui-component-architecture, interface-management, interface-vlan-management-plan, evidence README, operations notes).
+- Checks: tsc PASS; biome lint PASS; npm test 85 pass, 2 pre-existing failures. UNVERIFIED: browser/visual tests (need database/browser run); keyboard nav and 4-tab count only edited in spec, not executed.
+- Risks/rollback: UI-only; git revert. Direct references to the old "Underlay"/"LAN & Routing" tab names in external notes are stale.
+- Next: run test:browser (inventory, network-draft, interface-apply) and test:visual.
+## TRANSIT-POLICY-001 — 2026-10-29
+- Task: routed-LAN milestone 3 first increment. Controller-managed global transit allow rules (any protocol, no ports) between saved device LAN prefixes, draft then deploy, plus a locally gated agent renderer ahead of the owned tunnel forwarding guard.
+- Controller: migration 0024 (`transit_policy`, audit actions); `transit-policy.ts`, `transit-validation.ts`; routes `/api/operator/controller-settings/transit[/deploy]`; `TransitPolicy` card in Settings (superadmin); `wireguardPlan` adds per-node `routing.transit`; shared `wireguardSchemaVersion` (v4 only when rules apply, v3 payloads/checksums unchanged); openapi + api-contract test; inventory test migration count 24.
+- Agent (sdwan-edge): `TransitRule` in `Routing`, `validateTransit` (prefixes limited to local LAN and BGP peer imports, ≤64 rules), `transit.go` renderer binding each prefix to its interface, `ensureIsolation(ctx, plan)`, `--enable-transit` (needs `--enable-routing`) via `Engine.AllowTransit`; schema v4 accepted; v4 rules rejected without the local flag. Journaling/rollback reuse the existing plan journal.
+- Docs: routed-lan.md, communication-matrix.md, STATUS.md, routed-lan.conf.example. No reusable UI component added (feature-specific card).
+- Checks run: Go `go test ./...` PASS, `go test -race` on network/agent PASS, `go vet` PASS (toolchain 1.27.2 from a local container layer); controller `tsc` PASS, `biome lint` PASS, new `transit-validation.test.mjs` PASS, `api-contract.test.mjs` PASS, `npm run test:integration` 34/34 PASS (incl. new transit-policy test). `npm test` has 2 failures in agent-desired-route.test.mjs (DATABASE_URL required by network-commit-state.ts), in files not touched here.
+- UNVERIFIED: Playwright spec added to controller-settings.spec.ts did not run — the sandbox browser run timed out at sign-in for every spec including existing ones; `test:visual` not run; namespace forwarding lab (`FABRIC_ROUTING_LAB=1`, `routing_lab_test.go` still asserts the no-rule denial) not run; no physical appliance traffic, so LAN-to-LAN forwarding with the rules is unproven.
+- Risks/rollback: an allow rule opens forwarding between sites (limited to saved LAN prefixes and the local flag). Agents without v4 support reject the revision; upgrade before deploying. Rollback: deploy an empty policy or restart agents without `--enable-transit`; migration 0024 is additive.
+- Next: run browser/visual and the routing namespace lab on a capable host; then validate on the Debian lab with `--enable-transit`.
 ## CONTROLLER-SETUP-001 — 2026-11-02 — Claude Code
 
 - Status: COMPLETE for script/tests/docs; NOT run against a real install (see UNVERIFIED).

@@ -185,7 +185,7 @@ export function AgentTelemetry({
                           {item.name === 'lo' || item.kind === 'loopback'
                             ? 'Loopback'
                             : /^pm[0-9a-f]{12}$/.test(item.name)
-                              ? 'Managed by Overlay'
+                              ? 'Managed by SD-WAN'
                               : item.kind === 'wireguard'
                                 ? 'WireGuard interface'
                                 : 'Reserved Fabric interface'}

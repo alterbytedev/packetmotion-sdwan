@@ -27,3 +27,13 @@ test('ok is true only for an applied plan with nothing to act on', () => {
   assert.equal(deploymentStatus({ ...device, tunnelCount: 0, handshakes: [] }).ok, true);
   assert.equal(deploymentStatus({ ...device, applyStatus: 'disabled' }).ok, false);
 });
+
+test('sdwanIndicator reports integrated, pending and not configured', () => {
+  const { sdwanIndicator } = loader()('src/lib/fabric/wireguard-deployment-status.ts');
+  const node = { id: 'n', name: 'edge01', kind: 'branch', connectionStatus: 'management-connected', lastSeenAt: null,
+    configRevision: 2, configStatus: 'received', sdwan: { ...device } };
+  assert.equal(sdwanIndicator(node, now).label, 'SD-WAN integrated');
+  assert.equal(sdwanIndicator({ ...node, sdwan: { ...device, handshakes: [{ name: 'x', lastHandshake: 0 }] } }, now).tone, 'warn');
+  assert.equal(sdwanIndicator({ ...node, sdwan: null }, now).label, 'SD-WAN not configured');
+  assert.equal(sdwanIndicator({ ...node, sdwan: { ...device, tunnelCount: 0, handshakes: [] } }, now).tone, 'muted');
+});

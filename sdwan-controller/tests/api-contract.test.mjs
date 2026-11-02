@@ -64,7 +64,7 @@ test('WireGuard contracts preserve device scope and separate receipt from apply'
   for (const endpoint of ['wireguard-key', 'wireguard-status']) {
     assert.deepEqual(spec.paths[`/api/agent/v1/${endpoint}`].post.security, [{ deviceCertificate: [] }]);
   }
-  assert.deepEqual(spec.components.schemas.DeviceConfig.properties.schemaVersion.enum, [1, 2, 3]);
+  assert.deepEqual(spec.components.schemas.DeviceConfig.properties.schemaVersion.enum, [1, 2, 3, 4]);
   assert.ok(spec.components.schemas.RoutingPlan.properties.bgp);
   assert.ok(spec.components.schemas.WireguardStatusInput.properties.bgpPeers);
   assert.deepEqual(spec.components.schemas.WireguardStatusInput.properties.status.enum, ['disabled', 'applied', 'failed']);

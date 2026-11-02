@@ -730,3 +730,38 @@ func TestManagementOnlyRegistersStableKeyAndRetriesWithoutBlockingReceipt(t *tes
 		})
 	}
 }
+
+func TestSchemaFourTransitRulesRequireLocalTransitOptIn(t *testing.T) {
+	payload := `{"schemaVersion":4,"deviceKind":"branch","mode":"gateway","lanPrefix":"10.61.0.0/24","pollIntervalSeconds":30,"wireguard":{"tunnels":[{"name":"pm0123456789ab","address":"10.250.0.1/31","peerAddress":"10.250.0.0","publicKey":"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=","endpoint":"192.0.2.1:22000","listenPort":0,"keepalive":25,"allowedPrefixes":["10.62.0.0/24"]}],"routing":{"lan":{"interfaceName":"ens34","address":"10.61.0.1/24","advertisedPrefix":"10.61.0.0/24"},"protectedPrefixes":["192.168.160.0/24"],"transit":[{"id":"lan-to-peer","source":"10.61.0.0/24","destination":"10.62.0.0/24","protocol":"any"}],"bgp":{"localAsn":65001,"routerId":"10.61.0.1","peers":[{"interfaceName":"pm0123456789ab","address":"10.250.0.0","remoteAsn":65000,"importPrefixes":["10.62.0.0/24"],"exportPrefixes":["10.61.0.0/24"],"localPreference":200}]}}}}`
+	sum := sha256.Sum256([]byte(payload))
+	checksum := hex.EncodeToString(sum[:])
+	for _, optIn := range []bool{false, true} {
+		directory := filepath.Join(t.TempDir(), "state")
+		state := identity.State{NodeID: "node", Kind: "branch", TransitEnabled: optIn}
+		status := ""
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/api/agent/v1/desired":
+				fmt.Fprintf(w, `{"revision":1,"payload":%s,"checksum":"%s"}`, payload, checksum)
+			case "/api/agent/v1/ack":
+				var body struct {
+					Status string `json:"status"`
+				}
+				json.NewDecoder(r.Body).Decode(&body)
+				status = body.Status
+				w.Write([]byte(`{"accepted":true}`))
+			default:
+				w.Write([]byte(`{"accepted":true,"registered":true,"recorded":true}`))
+			}
+		}))
+		client := &controller.Client{URL: server.URL, HTTP: server.Client()}
+		_, err := Poll(context.Background(), client, &state, directory, Snapshot(time.Now()))
+		server.Close()
+		if optIn && (err != nil || state.Revision != 1) {
+			t.Fatalf("opted-in agent did not stage transit rules: %v", err)
+		}
+		if !optIn && (err == nil || status != "rejected" || state.Revision != 0) {
+			t.Fatalf("transit rules staged without local opt-in: %v %q", err, status)
+		}
+	}
+}

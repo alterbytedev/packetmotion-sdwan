@@ -38,3 +38,5 @@ SSH, DNS, NTP, operating-system package repositories, monitoring, and backup tra
 - [Management channel](management-channel.md) documents HTTPS/mTLS request behavior and timing.
 
 The default signed agent release 0.1.6 is management-only. Source 0.2.0 can apply WireGuard adjacencies only when locally enabled. A saved or received configuration is not proof that it was applied. LAN forwarding, general BGP/policy, NAT and routed failover remain pending or unverified; see [current delivery status](../STATUS.md).
+
+Tunnel transit between device LANs is denied by default. Controller-defined allow rules (Settings → Transit policy) take effect only on appliances started with the local `--enable-transit` flag; see [Routed LAN](routed-lan.md#transit-allow-rules-milestone-3-source).

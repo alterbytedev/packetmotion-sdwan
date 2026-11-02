@@ -319,15 +319,19 @@ func ReconcileWait(ctx context.Context, client *controller.Client, state *identi
 	if err := decoder.Decode(&config); err != nil {
 		return rejectWithDiagnostic(ctx, client, desired, "invalid desired config", diagnosticErr)
 	}
-	if (config.SchemaVersion < 1 || config.SchemaVersion > 3) || config.DeviceKind != state.Kind || (config.Mode != "gateway" && config.Mode != "subnet-router") || config.PollIntervalSeconds < 10 || config.PollIntervalSeconds > 300 {
+	if (config.SchemaVersion < 1 || config.SchemaVersion > 4) || config.DeviceKind != state.Kind || (config.Mode != "gateway" && config.Mode != "subnet-router") || config.PollIntervalSeconds < 10 || config.PollIntervalSeconds > 300 {
 		return rejectWithDiagnostic(ctx, client, desired, "unsupported desired config", diagnosticErr)
 	}
-	if (config.SchemaVersion >= 2 && config.Wireguard == nil) || (config.SchemaVersion == 1 && config.Wireguard != nil) || (config.SchemaVersion == 3 && (config.Wireguard == nil || config.Wireguard.Routing == nil)) || (config.SchemaVersion == 2 && config.Wireguard != nil && config.Wireguard.Routing != nil) {
+	if (config.SchemaVersion >= 2 && config.Wireguard == nil) || (config.SchemaVersion == 1 && config.Wireguard != nil) || (config.SchemaVersion >= 3 && (config.Wireguard == nil || config.Wireguard.Routing == nil)) || (config.SchemaVersion == 3 && len(config.Wireguard.Routing.Transit) > 0) || (config.SchemaVersion == 4 && len(config.Wireguard.Routing.Transit) == 0) || (config.SchemaVersion == 2 && config.Wireguard != nil && config.Wireguard.Routing != nil) {
 		return rejectWithDiagnostic(ctx, client, desired, "invalid network schema", diagnosticErr)
 	}
 	if config.Wireguard != nil {
 		if err := network.Validate(*config.Wireguard); err != nil {
 			return rejectWithDiagnostic(ctx, client, desired, "invalid WireGuard plan", diagnosticErr)
+		}
+		// Controller policy alone must never open forwarding between sites.
+		if config.Wireguard.Routing != nil && len(config.Wireguard.Routing.Transit) > 0 && !state.TransitEnabled {
+			return rejectWithDiagnostic(ctx, client, desired, "transit rules require local --enable-transit", diagnosticErr)
 		}
 	}
 	if config.LANPrefix != nil {
@@ -381,7 +385,7 @@ func reportDeviceState(ctx context.Context, client *controller.Client, state *id
 	reason := ""
 	var report *network.DeviceState
 	engine := network.Engine{Directory: directory, NodeID: state.NodeID,
-		AllowRouting: state.RoutingEnabled, LANInterface: state.LANInterface}
+		AllowRouting: state.RoutingEnabled, AllowTransit: state.TransitEnabled, LANInterface: state.LANInterface}
 	value, err := engine.DeviceState(ctx, state.Revision, state.WireGuardEnabled)
 	if err != nil {
 		status = "unavailable"
@@ -514,6 +518,6 @@ func NetworkEngine(ctx context.Context, state *identity.State, directory, origin
 		return network.Engine{}, err
 	}
 	return network.Engine{Directory: directory, NodeID: state.NodeID,
-		AllowRouting: state.RoutingEnabled, LANInterface: state.LANInterface,
+		AllowRouting: state.RoutingEnabled, AllowTransit: state.TransitEnabled, LANInterface: state.LANInterface,
 		ManagementIPs: addresses}, nil
 }

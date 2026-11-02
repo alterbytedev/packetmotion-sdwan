@@ -76,13 +76,13 @@ export function NetworkConfigurationPreview({ node, role }: { node: NodeRecord; 
 
         <SummarySection icon={<Waypoints aria-hidden="true" />} title="Routing preview" action={isAdmin ? <Button type="button" variant="ghost" size="sm" onClick={() => setModal('topology')}>Edit</Button> : undefined}>
           <SummaryRow label="Operating mode" value={modeLabel(mode)} />
-          <SummaryRow label="Hub connections" value="Managed in the Overlay tab" />
-          <SummaryRow label="Advertised LAN" value="Managed in the LAN & Routing tab" />
+          <SummaryRow label="Hub connections" value="Managed in the SD-WAN tab" />
+          <SummaryRow label="Advertised LAN" value="Managed in the Network tab" />
           <SummaryRow label="Routing protocol" value="BGP IPv4 unicast" />
         </SummarySection>
 
         <SummarySection icon={<Settings2 aria-hidden="true" />} title="Interfaces and IP addressing">
-          <p className="text-xs leading-5 text-muted-foreground">Use the saved LAN network settings in the LAN & Routing tab. WAN and management addressing remain outside this preview.</p>
+          <p className="text-xs leading-5 text-muted-foreground">Use the saved LAN settings in the Network tab. WAN and management addressing remain outside this preview.</p>
         </SummarySection>
 
         <SummarySection icon={<SlidersHorizontal aria-hidden="true" />} title="Business policy" action={isAdmin ? <Button type="button" variant="outline" size="sm" onClick={() => setModal('policy')}><Plus /> Add policy</Button> : undefined}>

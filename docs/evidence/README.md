@@ -45,12 +45,12 @@ activation or connectivity result; screenshots are excluded from Git.
 
 ## Device detail categories — 2026-10-20
 
-The five device categories were captured and visually reviewed locally at 1440px desktop and 390px mobile, with tab wrapping and no page-width overflow. Screenshots are excluded from Git. Overview/Underlay telemetry is synthetic; these captures do not prove an appliance check-in, Internet connectivity, WireGuard apply, BGP sessions or routed reachability. Existing screenshot baselines remain unchanged.
+The device categories were captured and visually reviewed locally at 1440px desktop and 390px mobile, with tab wrapping and no page-width overflow. Screenshots are excluded from Git. Overview/Network telemetry is synthetic; these captures do not prove an appliance check-in, Internet connectivity, WireGuard apply, BGP sessions or routed reachability. Existing screenshot baselines remain unchanged.
 
 Fourteen targeted Chromium/Xvfb journeys passed across focused runs: category/keyboard navigation, preserved form edits, telemetry refresh failure/retry, rename/archive, device-scoped configuration publication and viewer denial, superadmin disclosures/raw history/current-state collection and live-role denial, management troubleshooting, the local-only preview modal, and both saved WireGuard/deployment workflows. Headless Chromium frame callbacks failed in this environment; final browser evidence uses headed Chromium under Xvfb and fresh ignored test build directories. This is visual inspection plus interaction/overflow coverage, not a passing full pixel-diff or cross-browser suite.
 
 ## Interface safe commit increment — 2026-10-22
 
-Agent 0.4.0 adds current interface CIDRs and dedicated static LAN/VLAN safe apply through a locally authorized independent guard. Controller migrations 0022/0023 add candidates and immutable commit history; Underlay row actions offer Save and apply and Edit and retry. WAN/DHCP/gateway/advertisements remain blocked by this adapter, and forwarding stays isolated. Earlier metadata-only descriptions above describe the previous increment. See [interface operations](../operations/interface-management.md) for ownership, activation, recovery and evidence limits.
+Agent 0.4.0 adds current interface CIDRs and dedicated static LAN/VLAN safe apply through a locally authorized independent guard. Controller migrations 0022/0023 add candidates and immutable commit history; Network-tab interface row actions offer Save and apply and Edit and retry. WAN/DHCP/gateway/advertisements remain blocked by this adapter, and forwarding stays isolated. Earlier metadata-only descriptions above describe the previous increment. See [interface operations](../operations/interface-management.md) for ownership, activation, recovery and evidence limits.
 
 - [Interface safe commit namespace and browser evidence](interface-apply/README.md).

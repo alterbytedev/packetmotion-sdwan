@@ -20,7 +20,7 @@ test('WireGuard draft persists without publication, Deploy publishes both peers 
   });
   expect((await page.request.put(`/api/operator/nodes/${hub}/wireguard`, { headers, data: { expectedVersion: 0, endpoint: '192.168.160.142', basePort: 22000 } })).ok()).toBe(true);
   await page.goto(`/dashboard/devices/${edge}`);
-  await page.getByRole('tab', { name: 'Overlay', exact: true }).click();
+  await page.getByRole('tab', { name: 'SD-WAN', exact: true }).click();
   const save = page.getByRole('button', { name: 'Save draft', exact: true });
   const deploy = page.getByRole('button', { name: 'Deploy changes', exact: true });
   await expect(save).toBeDisabled(); await expect(deploy).toBeDisabled();
@@ -32,7 +32,7 @@ test('WireGuard draft persists without publication, Deploy publishes both peers 
   const revision = async (id: string) => database(async pool => (await pool.query('SELECT max(revision) AS revision FROM desired_configs WHERE node_id=$1', [id])).rows[0].revision);
   expect(await revision(edge)).toBe(1); expect(await revision(hub)).toBe(2);
   await page.reload();
-  await page.getByRole('tab', { name: 'Overlay', exact: true }).click();
+  await page.getByRole('tab', { name: 'SD-WAN', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: /Deploy Hub/ })).toBeChecked();
   await expect(deploy).toBeEnabled();
   await page.screenshot({ path: `/tmp/packetmotion-deploy-draft-${info.project.name}.png`, fullPage: true });
@@ -83,7 +83,7 @@ test('WireGuard draft persists without publication, Deploy publishes both peers 
 
   await database(pool => pool.query("UPDATE operators SET role='viewer' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]));
   try {
-    await page.reload(); await page.getByRole('tab', { name: 'Overlay', exact: true }).click();
+    await page.reload(); await page.getByRole('tab', { name: 'SD-WAN', exact: true }).click();
     await expect(save).toHaveCount(0); await expect(deploy).toHaveCount(0);
     expect((await page.request.post(`/api/operator/nodes/${edge}/wireguard/deploy`, { headers, data: { expectedVersion: 1, expectedDraftVersion: 2 } })).status()).toBe(403);
   } finally { await database(pool => pool.query("UPDATE operators SET role='admin' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL])); }

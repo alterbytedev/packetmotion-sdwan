@@ -18,7 +18,7 @@ test('interface VLAN drafts save without deployment and viewers cannot edit them
       interfaces: [{ name: 'lo', up: true, mtu: 65536 }, { name: 'ens33', up: true, mtu: 1500 }, { name: 'ens36', up: false, mtu: 1500 }, { name: 'pm8617db064cf9', up: true, mtu: 1380 }] },
   } } }));
   await page.goto(`/dashboard/devices/${node.id}`);
-  await page.getByRole('tab', { name: 'Underlay', exact: true }).click();
+  await page.getByRole('tab', { name: 'Network', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Interfaces', exact: true })).toBeVisible();
   await expect(page.getByText('WAN addressing is managed locally on the appliance.', { exact: false })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Configure lo', exact: true })).toHaveCount(0);
@@ -42,7 +42,7 @@ test('interface VLAN drafts save without deployment and viewers cannot edit them
   await page.getByRole('button', { name: 'Save interface draft', exact: true }).click();
   await expect(page.getByText('Interface draft saved. Appliance configuration has not changed.', { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole('tab', { name: 'Underlay', exact: true }).click();
+  await page.getByRole('tab', { name: 'Network', exact: true }).click();
   await page.getByRole('button', { name: 'VLANs on ens36', exact: true }).click();
   await expect(page.getByLabel('VLAN tag', { exact: true })).toHaveValue('100');
   await expect(page.getByLabel('IPv4 address / prefix', { exact: true })).toHaveValue('10.88.100.1/24');
@@ -63,7 +63,7 @@ test('interface VLAN drafts save without deployment and viewers cannot edit them
   await database(async (pool) => { await pool.query("UPDATE operators SET role='viewer' WHERE email=$1", [process.env.FABRIC_TEST_EMAIL]); });
   try {
     await page.reload();
-    await page.getByRole('tab', { name: 'Underlay', exact: true }).click();
+    await page.getByRole('tab', { name: 'Network', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Configure ens33', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'View settings for ens33', exact: true }).click();
     await expect(page.getByLabel('Physical interface / parent', { exact: true })).toBeDisabled();

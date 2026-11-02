@@ -44,7 +44,7 @@ test('current IPs, safe apply results and edit retry are available from interfac
     );
   });
   await page.goto(`/dashboard/devices/${node.id}`);
-  await page.getByRole('tab', { name: 'Underlay', exact: true }).click();
+  await page.getByRole('tab', { name: 'Network', exact: true }).click();
   await expect(page.getByText('192.168.160.142/24, fe80::1/64', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Configure ens33', exact: true }).click();
   await expect(page.getByLabel('IPv4 address / prefix', { exact: true })).toHaveValue(

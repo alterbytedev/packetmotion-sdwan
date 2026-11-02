@@ -8,3 +8,6 @@ SupplementaryGroups=frrvty
 CapabilityBoundingSet=CAP_NET_ADMIN
 AmbientCapabilities=CAP_NET_ADMIN
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# Optional, lab-only: also add --enable-transit to the ExecStart above so the
+# agent applies controller transit allow rules between approved LANs. Without it,
+# tunnel transit stays blocked and a revision carrying transit rules is rejected.

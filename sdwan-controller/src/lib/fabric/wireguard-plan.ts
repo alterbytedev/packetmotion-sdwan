@@ -2,6 +2,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import { recordCommandPublication } from './command-history';
 import type { PoolClient } from 'pg';
+import type { TransitRule } from './transit-validation';
 
 type RoutingPlan = {
   lan: { interfaceName: string; address: string; advertisedPrefix: string };
@@ -10,6 +11,7 @@ type RoutingPlan = {
     interfaceName: string; address: string; remoteAsn: number;
     importPrefixes: string[]; exportPrefixes: string[]; localPreference: number;
   }[] };
+  transit?: TransitRule[];
 };
 
 // All topology writers acquire this before node locks. Pool allocation and
@@ -69,8 +71,19 @@ export async function wireguardPlan(client: PoolClient, nodeId: string) {
         })),
       },
     };
+    // Deployed rules apply only between this node's LAN and its linked peers' LANs,
+    // so a hub also carries edge-to-edge rules while an edge never sees unrelated ones.
+    const approved = new Set([local.local_prefix, ...links.rows.map((link) => link.peer_prefix).filter(Boolean)]);
+    const policy = await client.query('SELECT rules FROM transit_policy WHERE singleton=TRUE');
+    const transit = ((policy.rows[0]?.rules ?? []) as TransitRule[]).filter((rule) => approved.has(rule.source) && approved.has(rule.destination));
+    if (transit.length) routing.transit = transit;
   }
   return { tunnels, ...(routing ? { routing } : {}) };
+}
+
+// v4 only when transit rules exist, so payloads (and checksums) of other nodes are unchanged.
+export function wireguardSchemaVersion(plan: { routing?: RoutingPlan }): 2 | 3 | 4 {
+  return plan.routing?.transit?.length ? 4 : plan.routing ? 3 : 2;
 }
 
 export async function publishWireguardPlans(client: PoolClient, nodeIds: string[], actorEmail = 'Controller (automatic)') {
@@ -85,7 +98,7 @@ export async function publishWireguardPlans(client: PoolClient, nodeIds: string[
     );
     if (!prior.rowCount) continue;
     const plan = await wireguardPlan(client, nodeId);
-    const payload = { ...JSON.parse(prior.rows[0].payload), schemaVersion: plan.routing ? 3 : 2, wireguard: plan };
+    const payload = { ...JSON.parse(prior.rows[0].payload), schemaVersion: wireguardSchemaVersion(plan), wireguard: plan };
     const serialized = JSON.stringify(payload);
     const checksum = createHash('sha256').update(serialized).digest('hex');
     const revision = prior.rows[0].revision + 1;

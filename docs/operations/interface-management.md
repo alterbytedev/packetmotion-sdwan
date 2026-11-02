@@ -1,8 +1,8 @@
 # Interface and VLAN configuration
 
-## Underlay workflow
+## Network tab interface workflow
 
-Device details → Underlay lists reported interfaces with their current IPv4/IPv6 CIDRs. An empty address list means unassigned; absent addresses mean an older agent or unavailable observation. **Configure** opens settings for that interface and prefills its first observed IPv4 address. **VLANs** opens tagged settings for its physical parent. Kernel-reported VLAN tags and parents are shown. Loopback and Fabric tunnels remain informational. Viewers have read-only access. Refresh reads the latest heartbeat; it does not force a new appliance sample.
+Device details → Network lists reported interfaces with their current IPv4/IPv6 CIDRs. An empty address list means unassigned; absent addresses mean an older agent or unavailable observation. **Configure** opens settings for that interface and prefills its first observed IPv4 address. **VLANs** opens tagged settings for its physical parent. Kernel-reported VLAN tags and parents are shown. Loopback and Fabric tunnels remain informational. Viewers have read-only access. Refresh reads the latest heartbeat; it does not force a new appliance sample.
 
 Admins can save versioned candidates for static IPv4, WAN DHCP/gateway, MTU, enabled state and exact optional LAN advertisements. Saving preserves other interface scopes and does not apply anything. **Save and apply** saves then queues only the selected physical or VLAN scope. Queueing is distinct from successful apply. A failure between save and queue leaves a saved candidate that can be reviewed again.
 
