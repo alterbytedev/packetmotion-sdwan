@@ -109,18 +109,27 @@ done
 [[ -f /etc/debian_version ]] || die 'This script supports Debian only.'
 ((DRY_RUN)) || [[ $EUID -eq 0 ]] || die 'Run as root (or use --dry-run).'
 if ((NON_INTERACTIVE == 0)) && [[ ! -t 0 ]]; then die 'No terminal available; use --non-interactive with explicit options.'; fi
+if ((DRY_RUN == 0)) && ! { command -v python3 && command -v openssl && command -v ip; } >/dev/null; then
+  info 'Installing base tools (python3, openssl, iproute2)'
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 openssl iproute2 || die 'Could not install python3/openssl/iproute2 with apt.'
+fi
 for tool in python3 openssl ip; do command -v "$tool" >/dev/null || die "Required tool is missing: $tool"; done
 
 # ---------------------------------------------------------------- prompts
-ask_choice() { # prompt default option...  -> echoes the chosen option
+ask_choice() { # prompt default option...  -> numbered menu; echoes the chosen option value
   local prompt=$1 default=$2; shift 2
-  local reply
+  local options=("$@") reply i default_n=1
   if ((NON_INTERACTIVE)); then echo "$default"; return; fi
+  echo >&2
+  for i in "${!options[@]}"; do
+    printf '  %d) %s\n' $((i + 1)) "${options[i]}" >&2
+    [[ "${options[i]}" == "$default" ]] && default_n=$((i + 1))
+  done
   while true; do
-    read -r -p "$prompt [$default]: " reply </dev/tty || die 'Input closed.'
-    reply=${reply:-$default}
-    for option in "$@"; do [[ "$reply" == "$option" ]] && { echo "$reply"; return; }; done
-    echo "  Choose one of: $*" >&2
+    read -r -p "$prompt [1-${#options[@]}, default $default_n]: " reply </dev/tty || die 'Input closed.'
+    reply=${reply:-$default_n}
+    if [[ "$reply" =~ ^[0-9]+$ ]] && ((reply >= 1 && reply <= ${#options[@]})); then echo "${options[reply - 1]}"; return; fi
+    echo "  Enter a number from 1 to ${#options[@]}." >&2
   done
 }
 confirm() { # message -> 0 when accepted
@@ -223,7 +232,7 @@ Deployment mode:
   production  No cleartext enrollment (TCP 80 only redirects), non-root service, certificate
               validation, and a DNS name is strongly recommended.
 EOF
-  MODE=$(ask_choice 'Mode (lab/production)' lab lab production)
+  MODE=$(ask_choice 'Deployment mode' lab lab production)
 fi
 
 if [[ -z "$TLS" ]]; then
@@ -237,7 +246,7 @@ Server certificate:
               Edges use their OS trust store; no pin is published.
 EOF
     default_tls=private-ca; [[ "$MODE" == production ]] && default_tls=custom
-    TLS=$(ask_choice 'Certificate source (private-ca/custom)' "$default_tls" private-ca custom)
+    TLS=$(ask_choice 'Certificate source' "$default_tls" private-ca custom)
   fi
 fi
 
@@ -296,7 +305,7 @@ elif [[ -z "$SETUP_POSTGRES" ]]; then
   if ((NON_INTERACTIVE)); then SETUP_POSTGRES=0; else
     echo; echo 'No database is configured. This lab can install Docker and run PostgreSQL 17 in a container for you'
     echo "(container $PG_CONTAINER, data volume $PG_VOLUME, reachable on 127.0.0.1 only, random password)."
-    SETUP_POSTGRES=$([[ "$(ask_choice 'Install Docker and PostgreSQL for me? (yes/no)' yes yes no)" == yes ]] && echo 1 || echo 0)
+    SETUP_POSTGRES=$([[ "$(ask_choice 'Install Docker and PostgreSQL for me?' yes yes no)" == yes ]] && echo 1 || echo 0)
   fi
 fi
 if [[ "$SETUP_POSTGRES" == 1 ]]; then
@@ -399,6 +408,35 @@ print(url)')
   DB_PLAN="PostgreSQL $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME, TLS $DB_SSLMODE (password not shown)"
 fi
 
+# ------------------------------------------------------------- Node.js
+node_ok() { # node and npm present and node >= 22.12
+  command -v node >/dev/null && command -v npm >/dev/null \
+    && node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=12)?0:1)' 2>/dev/null
+}
+# Downloads the official Node.js 22 LTS tarball, verifies it against the published SHASUMS256.txt
+# (same HTTPS origin) and installs it under /opt, linked into /usr/local/bin so a non-root service
+# account can run it. apt's Debian nodejs is usually older than the 22.12 minimum.
+install_node() {
+  local arch dist="https://nodejs.org/dist/latest-v22.x" tmp file sum
+  case "$(uname -m)" in x86_64) arch=x64 ;; aarch64) arch=arm64 ;; armv7l) arch=armv7l ;; *) die "No official Node.js build for $(uname -m); install Node.js 22.12+ manually." ;; esac
+  info "Installing Node.js 22 (official build, linux-$arch)"
+  tmp=$(mktemp -d)
+  curl -fsSL "$dist/SHASUMS256.txt" -o "$tmp/SHASUMS256.txt" || { rm -rf "$tmp"; die "Could not download $dist/SHASUMS256.txt (no internet access?)."; }
+  file=$(grep -oE "node-v22\.[0-9]+\.[0-9]+-linux-$arch\.tar\.xz" "$tmp/SHASUMS256.txt" | head -n1)
+  [[ -n "$file" ]] || { rm -rf "$tmp"; die "No Node.js 22 build for linux-$arch in SHASUMS256.txt."; }
+  curl -fSL "$dist/$file" -o "$tmp/$file" || { rm -rf "$tmp"; die "Could not download $dist/$file."; }
+  sum=$(grep " $file\$" "$tmp/SHASUMS256.txt" | cut -d' ' -f1)
+  [[ "$(sha256sum "$tmp/$file" | cut -d' ' -f1)" == "$sum" ]] || { rm -rf "$tmp"; die "Checksum mismatch for $file; refusing to install."; }
+  rm -rf "/opt/${file%.tar.xz}"
+  tar -xJf "$tmp/$file" -C /opt || { rm -rf "$tmp"; die 'Could not extract Node.js.'; }
+  rm -rf "$tmp"
+  local bin
+  for bin in node npm npx corepack; do ln -sf "/opt/${file%.tar.xz}/bin/$bin" "/usr/local/bin/$bin"; done
+  echo "Node.js $(/usr/local/bin/node -v) installed in /opt/${file%.tar.xz}."
+}
+NODE_PLAN='present'
+if ! node_ok; then NODE_PLAN='install official Node.js 22 LTS (checksum-verified) into /opt'; fi
+
 # -------------------------------------------------------------- the plan
 cat <<EOF
 
@@ -411,6 +449,7 @@ Plan
   TCP 80               $([[ "$HTTP_ENROLL" == 1 ]] && echo "NGINX on $ADDRESS: lab installer/enrollment (cleartext)" || echo "NGINX on $ADDRESS: redirect to HTTPS only")
   Next.js              127.0.0.1:$PORT as '$RUN_AS' via systemd ($SERVICE)
   database             $DB_PLAN
+  Node.js              $NODE_PLAN
 EOF
 if ((${#RISKS[@]})); then
   echo; echo 'Risks to accept:'; printf '  - %s\n' "${RISKS[@]}"
@@ -424,11 +463,19 @@ echo
 if ((${#RISKS[@]})); then confirm 'Accept these risks and continue?' || die 'Aborted. Resolve the risks or pass --yes.'; else confirm 'Apply this plan?' || { ((NON_INTERACTIVE)) || die 'Aborted.'; }; fi
 
 # ------------------------------------------------------------- apply
+if ! command -v curl >/dev/null || ! command -v xz >/dev/null || [[ ! -d /etc/ssl/certs ]]; then
+  info 'Installing prerequisites (curl, ca-certificates, xz-utils)'
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq && apt-get install -y -qq curl ca-certificates xz-utils || die 'Could not install curl/ca-certificates/xz-utils with apt.'
+fi
+
+if ! node_ok; then
+  install_node
+  hash -r
+fi
 NODE_BIN=$(command -v node || true); NPM_BIN=$(command -v npm || true)
 [[ -n "$NODE_BIN" && -n "$NPM_BIN" ]] || die 'Node.js 22.12+ and npm are required (see sdwan-controller/.nvmrc).'
-"$NODE_BIN" -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=12)?0:1)' || die "Node.js $("$NODE_BIN" -v) is too old; 22.12.0 or newer is required."
-
-command -v curl >/dev/null || die 'Required tool is missing: curl'
+node_ok || die "Node.js $("$NODE_BIN" -v) is too old; 22.12.0 or newer is required."
 if [[ "$SETUP_POSTGRES" == 1 ]]; then
   info 'Docker and PostgreSQL (lab)'
   if ! command -v docker >/dev/null; then

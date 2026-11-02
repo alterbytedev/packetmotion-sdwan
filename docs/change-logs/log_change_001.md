@@ -1988,3 +1988,9 @@ Task files (including documentation/evidence and tests):
 - Risks: `*.log` would hide any future intentionally committed log; none exist today.
 - Rollback: `git checkout -- .gitignore`.
 - Next step: decide whether to `git rm --cached` the evidence PNGs (they stay on disk) and whether `mynotes.txt` should be removed from the repo.
+## setup-controller.sh: auto-install Node.js/base tools, numbered menus
+- Status: done; bash -n and interactive --dry-run checked. Real install path (Node download, apt) UNVERIFIED here (no Debian target run).
+- Changed: deploy/controller/setup-controller.sh
+- Node.js missing/too old now installs the official Node 22 tarball (SHASUMS256-verified) to /opt, linked in /usr/local/bin; curl/ca-certificates/xz-utils and python3/openssl/iproute2 installed via apt when absent. Plan shows a Node.js line.
+- ask_choice prompts are numbered menus (number input only).
+- Risk: needs internet to nodejs.org/apt. Rollback: git revert; remove /opt/node-v22* and /usr/local/bin/{node,npm,npx,corepack}.
